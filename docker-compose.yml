@@ -15,11 +15,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./init-db:/docker-entrypoint-initdb.d   # auto-run DDL saat init
+      - ./init-db:/docker-entrypoint-initdb.d # auto-run DDL saat init
     ports:
-      - "5432:5432"                              # expose untuk akses lokal / DBeaver
+      - "5432:5432" # expose untuk akses di lokal / DBeaver
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 10s
       timeout: 5s
       retries: 5
