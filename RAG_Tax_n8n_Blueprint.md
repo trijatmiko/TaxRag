@@ -143,12 +143,25 @@ POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:ge
 }
 ```
 
-**Output yang diambil:**
-```
-{{ $json.candidates[0].content.parts[0].text }}
-```
-
 > **Catatan:** Gunakan `temperature: 0.1` agar output deterministik dan konsisten.
+
+---
+
+### 1.4.1 Node: Edit Fields (Set) — Ekstrak Output Gemini
+
+Untuk mengambil output dari Node HTTP Request (Gemini) agar dapat digunakan di Node Code selanjutnya, gunakan Node **Edit Fields (Set)**.
+
+**Tipe Node:** `Edit Fields (Set)`
+
+**Konfigurasi Assignment:**
+- **Name**: `cleanedMarkdown`
+- **Type**: `String`
+- **Value** (Expression):
+  ```
+  {{ $json.candidates[0].content.parts[0].text }}
+  ```
+
+Dengan konfigurasi di atas, teks hasil pembersihan akan tersimpan dalam properti `cleanedMarkdown`.
 
 ---
 
