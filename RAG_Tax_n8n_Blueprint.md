@@ -471,6 +471,17 @@ Body:
 {{ $json.data[0].embedding }}
 ```
 
+> **Catatan:** Format response OpenRouter embedding mengikuti standar OpenAI (`data[0].embedding`). Jika Anda menggunakan **Cohere direct**, ekspresinya berbeda: `{{ $json.embeddings[0] }}`.
+
+**Cara menggunakan output ini — Tambahkan Node Edit Fields (Set):**
+
+Setelah Node HTTP Request Embedding, tambahkan Node **Edit Fields (Set)** dengan konfigurasi:
+- **Name**: `embedding_vector`
+- **Type**: `String`
+- **Value** (Expression): `{{ $json.data[0].embedding }}`
+
+Dengan ini, hasil vektor tersimpan di properti `embedding_vector` dan siap digunakan di Node PostgreSQL selanjutnya.
+
 #### 🔄 Cara Mengganti Model Embedding di OpenRouter
 
 Ubah `OPENROUTER_EMBEDDING_MODEL` di `.env`:
@@ -507,6 +518,60 @@ OPENROUTER_EMBEDDING_MODEL=google/text-embedding-004
 
 **Tipe Node:** `Postgres`
 
+#### Langkah 1: Setup Database (Jalankan Sekali via DBeaver / psql)
+
+Sebelum menjalankan workflow, eksekusi DDL berikut ke database `rag_tax`:
+
+```sql
+-- 1. Aktifkan ekstensi
+CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 2. Buat tabel utama
+-- ⚠️ Sesuaikan dimensi vector() dengan model embedding yang dipilih:
+--    openai/text-embedding-3-small  → vector(1536)
+--    openai/text-embedding-3-large  → vector(3072)
+--    Cohere embed-multilingual-v3.0 → vector(1024)
+--    google/text-embedding-004      → vector(768)
+CREATE TABLE tax_documents (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  chunk_text      TEXT NOT NULL,
+  chunk_index     INTEGER NOT NULL,
+  pasal_number    VARCHAR(20),
+  doc_type        VARCHAR(50) NOT NULL,
+  doc_number      VARCHAR(20),
+  doc_year        VARCHAR(10),
+  doc_title       TEXT,
+  jenis_pajak     VARCHAR(100),
+  source_url      TEXT,
+  ingested_at     TIMESTAMPTZ DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ DEFAULT NOW(),
+  embedding       vector(1536),  -- ← ganti dimensi sesuai model
+  UNIQUE (source_url, chunk_index)
+);
+
+-- 3. Index untuk pencarian semantik (IVFFlat — cocok untuk MVP)
+CREATE INDEX ON tax_documents
+  USING ivfflat (embedding vector_cosine_ops)
+  WITH (lists = 100);
+
+-- 4. Index standar untuk filter metadata
+CREATE INDEX idx_tax_doc_type     ON tax_documents (doc_type);
+CREATE INDEX idx_tax_jenis_pajak  ON tax_documents (jenis_pajak);
+CREATE INDEX idx_tax_doc_year     ON tax_documents (doc_year);
+CREATE INDEX idx_tax_ingested_at  ON tax_documents (ingested_at);
+```
+
+#### Langkah 2: Konfigurasi Node Postgres di n8n
+
+**Credential:** Hubungkan ke `rag_tax_postgres`:
+- Host: `postgres` (nama service Docker)
+- Port: `5432`
+- Database: `rag_tax`
+- User / Password: sesuai `.env`
+
+**Operation:** `Execute Query`
+
 **Query:**
 ```sql
 INSERT INTO tax_documents (
@@ -529,11 +594,48 @@ VALUES (
   NOW(),
   $10::vector
 )
-ON CONFLICT (source_url, chunk_index) 
+ON CONFLICT (source_url, chunk_index)
 DO UPDATE SET
   chunk_text = EXCLUDED.chunk_text,
   embedding = EXCLUDED.embedding,
   ingested_at = NOW();
+```
+
+**Query Parameters** (isi 10 parameter sesuai urutan `$1`–`$10`):
+
+| Param | Field n8n |
+|---|---|
+| `$1` | `{{ $json.chunk_text }}` |
+| `$2` | `{{ $json.chunk_index }}` |
+| `$3` | `{{ $json.pasal_number }}` |
+| `$4` | `{{ $json.doc_type }}` |
+| `$5` | `{{ $json.doc_number }}` |
+| `$6` | `{{ $json.doc_year }}` |
+| `$7` | `{{ $json.doc_title }}` |
+| `$8` | `{{ $json.jenis_pajak }}` |
+| `$9` | `{{ $json.source_url }}` |
+| `$10` | `{{ $json.embedding_vector }}` ← hasil dari Node Set sebelumnya |
+
+---
+
+#### Urutan Lengkap Node — Workflow Ingestion
+
+```
+[HTTP Request — Download PDF dari JDIH]
+        ↓
+[Extract From File — PDF → plain text]
+        ↓
+[HTTP Request — LLM Clean Ingestion (Gemini/OpenRouter)]
+        ↓
+[Edit Fields (Set) — simpan ke `cleanedMarkdown`]
+        ↓
+[Code — Chunking Logic (split per Pasal, sliding window fallback)]
+        ↓
+[HTTP Request — Embedding (Cohere/OpenAI/OpenRouter)]
+        ↓
+[Edit Fields (Set) — simpan ke `embedding_vector`]
+        ↓
+[Postgres — Upsert ke tabel `tax_documents`]
 ```
 
 ---
