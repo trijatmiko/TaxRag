@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
 
   # ─────────────────────────────────────────
@@ -39,6 +37,8 @@ services:
       N8N_BASIC_AUTH_ACTIVE: ${N8N_BASIC_AUTH_ACTIVE}
       N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
       N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      N8N_BLOCK_ENV_ACCESS_IN_EXPRESSIONS: ${N8N_BLOCK_ENV_ACCESS_IN_EXPRESSIONS}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
 
       # Host & Webhook
       N8N_HOST: ${N8N_HOST}
@@ -64,11 +64,15 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       COHERE_API_KEY: ${COHERE_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_INGESTION_MODEL: ${OPENROUTER_INGESTION_MODEL}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL}
 
     ports:
       - "5678:5678"
     volumes:
       - n8n_data:/home/node/.n8n
+      - C:/data-ingestion:/home/node/.n8n-files # Mengambil data dari folder data-ingestion
 
 volumes:
   postgres_data:

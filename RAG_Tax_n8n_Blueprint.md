@@ -68,7 +68,8 @@ Pipeline dibagi menjadi **2 workflow utama**:
 [Node: Extract Binary Data — Baca file PDF]
         │
         ▼
-[Node: Gemini Flash 2.5 — Clean Ingestion]
+[Node: LLM Clean Ingestion]
+        │  → Pilihan: Gemini Flash 2.5 (direct) ATAU model via OpenRouter
         │  → Konversi PDF ke Markdown
         │  → Hapus noise (TTD pejabat, nomor halaman, header/footer berulang)
         │  → Normalisasi format pasal, ayat, huruf
@@ -79,7 +80,7 @@ Pipeline dibagi menjadi **2 workflow utama**:
         │  → Tambahkan metadata (nama UU, nomor pasal, tanggal, dll.)
         │
         ▼
-[Node: OpenAI / Cohere — Generate Embedding]
+[Node: Embedding — OpenAI / Cohere / OpenRouter]
         │
         ▼
 [Node: PostgreSQL — Upsert ke tabel vector]
@@ -115,9 +116,15 @@ Gunakan node **Extract From File** (tipe: PDF) untuk mengekstrak teks mentah dar
 
 ---
 
-### 1.4 Node: Gemini Flash 2.5 — Clean Ingestion (INTI)
+### 1.4 Node: LLM — Clean Ingestion (INTI)
 
-**Tipe Node:** `HTTP Request` ke Gemini API
+Node ini punya **dua pilihan provider**: Gemini langsung atau model apapun via OpenRouter. Pilih salah satu sesuai kebutuhan.
+
+---
+
+#### Pilihan A: Gemini Flash 2.5 (Direct API)
+
+**Tipe Node:** `HTTP Request`
 
 **Endpoint:**
 ```
@@ -148,7 +155,174 @@ POST https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:ge
 {{ $json.candidates[0].content.parts[0].text }}
 ```
 
-> **Catatan:** Gunakan `temperature: 0.1` agar output deterministik dan konsisten.
+---
+
+#### Pilihan B: OpenRouter (Akses Multi-Model via Satu API)
+
+OpenRouter memungkinkan Anda mengganti model LLM hanya dengan mengubah satu nilai `model` di request body — tanpa perlu ganti endpoint atau credential. Cocok untuk eksperimen membandingkan kualitas cleaning antar model.
+
+**Tipe Node:** `HTTP Request`
+
+**Endpoint:**
+```
+POST https://openrouter.ai/api/v1/chat/completions
+```
+
+**Headers:**
+```
+Authorization  : Bearer {{$env.OPENROUTER_API_KEY}}
+Content-Type   : application/json
+HTTP-Referer   : http://localhost:5678
+X-Title        : RAG Tax Indonesia
+```
+
+**Request Body (JSON):**
+```json
+{
+  "model": "{{$env.OPENROUTER_INGESTION_MODEL}}",
+  "temperature": 0.1,
+  "max_tokens": 8192,
+  "messages": [
+    {
+      "role": "system",
+      "content": "Kamu adalah asisten pengolah dokumen hukum Indonesia. Tugasmu adalah membersihkan dan mengkonversi teks dokumen hukum ke format Markdown yang bersih dan terstruktur. Output HANYA berisi Markdown, tanpa penjelasan tambahan."
+    },
+    {
+      "role": "user",
+      "content": "Bersihkan dokumen berikut sesuai aturan:\n1. HAPUS tanda tangan pejabat, cap/stempel, dan blok pengesahan\n2. HAPUS nomor halaman\n3. HAPUS header dan footer berulang\n4. HAPUS watermark atau keterangan 'Salinan'\n5. FORMAT struktur pasal: `## Pasal 1`, `### Ayat (1)`, `#### Huruf a`\n6. PERTAHANKAN semua konten hukum substantif\n7. NORMALISASI spasi ganda dan karakter aneh hasil OCR\n\nDokumen:\n{{ $json.text }}"
+    }
+  ]
+}
+```
+
+**Output yang diambil:**
+```
+{{ $json.choices[0].message.content }}
+```
+
+> **Catatan:** Format response OpenRouter mengikuti standar OpenAI (`choices[0].message.content`), berbeda dengan Gemini direct (`candidates[0].content.parts[0].text`). Pastikan node Code setelahnya membaca field yang tepat sesuai provider yang dipilih.
+
+---
+
+##### Node Code — Error Handler (sambungkan ke output "On Error")
+
+Buat node `Code` dan hubungkan ke **output "On Error"** dari HTTP Request di atas. Node ini menangani tiga jenis error:
+
+- `429` — Rate limit → **Wait otomatis** lalu retry
+- `500 / 502 / 503` — Server error sementara → retry dengan exponential backoff, maksimal 3x
+- Error lainnya → hentikan workflow dan lempar error asli
+
+```javascript
+// ============================================================
+// ERROR HANDLER — OpenRouter Ingestion
+// Hubungkan ke: output "On Error" dari HTTP Request
+// ============================================================
+
+const err = $input.first().json;
+const statusCode = err.statusCode ?? err.status ?? err.httpCode;
+const retryCount = err._retry_count ?? 0;
+const MAX_RETRIES = 3;
+
+// ── 429: Rate Limit ──────────────────────────────────────────
+if (statusCode === 429) {
+  // Ambil nilai Retry-After dari header jika ada, default 60 detik
+  const retryAfter = parseInt(err.headers?.['retry-after'] ?? '60', 10);
+  return [{
+    json: {
+      ...$input.first().json,
+      _should_retry: true,
+      _retry_count: retryCount,
+      _wait_seconds: retryAfter,
+      _error_type: 'rate_limit',
+    }
+  }];
+}
+
+// ── 500 / 502 / 503: Server Error Sementara ──────────────────
+if ([500, 502, 503].includes(statusCode)) {
+  if (retryCount >= MAX_RETRIES) {
+    throw new Error(
+      `OpenRouter ingestion gagal setelah ${MAX_RETRIES}x retry. ` +
+      `Status: ${statusCode}. Response: ${JSON.stringify(err)}`
+    );
+  }
+  // Exponential backoff: 5s, 10s, 20s
+  const waitSeconds = 5 * Math.pow(2, retryCount);
+  return [{
+    json: {
+      ...$input.first().json,
+      _should_retry: true,
+      _retry_count: retryCount + 1,
+      _wait_seconds: waitSeconds,
+      _error_type: 'server_error',
+    }
+  }];
+}
+
+// ── Error lain: hentikan workflow ────────────────────────────
+throw new Error(
+  `OpenRouter ingestion error tidak tertangani. ` +
+  `Status: ${statusCode}. Response: ${JSON.stringify(err)}`
+);
+```
+
+**Susunan node Pilihan B:**
+
+```
+[HTTP Request: OpenRouter]
+       │                  │
+       │ (sukses)         │ (On Error)
+       ▼                  ▼
+[Code: Chunking]   [Code: Error Handler]
+                          │
+                          ▼
+                   [Node: Wait — {{ $json._wait_seconds }} detik]
+                          │
+                          ▼
+                   [HTTP Request: OpenRouter — retry]
+```
+
+Di n8n, sambungkan output **Error Handler** → **Node Wait** (isi durasi dengan `{{ $json._wait_seconds }}`) → kembali ke **HTTP Request** yang sama.
+
+---
+
+#### 🔄 Cara Mengganti Model di OpenRouter
+
+Cukup ubah nilai `OPENROUTER_INGESTION_MODEL` di file `.env` — tidak perlu menyentuh workflow n8n sama sekali.
+
+```env
+# Contoh pilihan model untuk clean ingestion:
+
+# Gemini Flash 2.5 via OpenRouter
+OPENROUTER_INGESTION_MODEL=google/gemini-2.5-flash
+
+# Gemini Pro 2.5 (lebih akurat, lebih lambat & mahal)
+OPENROUTER_INGESTION_MODEL=google/gemini-2.5-pro
+
+# DeepSeek V3 (murah, performa tinggi)
+OPENROUTER_INGESTION_MODEL=deepseek/deepseek-chat-v3-0324
+
+# Qwen 2.5 72B (open source, bagus untuk teks formal Asia)
+OPENROUTER_INGESTION_MODEL=qwen/qwen-2.5-72b-instruct
+
+# Claude 3.5 Haiku (cepat dan hemat)
+OPENROUTER_INGESTION_MODEL=anthropic/claude-3-5-haiku
+
+# GPT-4o Mini (hemat, cukup untuk cleaning)
+OPENROUTER_INGESTION_MODEL=openai/gpt-4o-mini
+```
+
+**Cara menemukan nama model di OpenRouter:**
+1. Buka [openrouter.ai/models](https://openrouter.ai/models)
+2. Filter berdasarkan harga, konteks, atau provider
+3. Klik model → salin nilai `ID` (format: `provider/model-name`)
+4. Tempel ke `.env` sebagai nilai `OPENROUTER_INGESTION_MODEL`
+5. Restart tidak diperlukan — n8n membaca env var setiap kali node dijalankan
+
+> **Tips memilih model untuk clean ingestion:**
+> - Prioritaskan model dengan **context window besar** (≥32K) karena dokumen UU bisa sangat panjang
+> - `temperature: 0.1` tetap berlaku di semua model — jangan diubah untuk task cleaning
+> - DeepSeek V3 dan Qwen 2.5 72B adalah pilihan hemat biaya yang performanya kompetitif untuk teks formal Bahasa Indonesia
 
 ---
 
@@ -233,7 +407,11 @@ return output;
 
 ---
 
-### 1.6 Node: Embedding — OpenAI atau Cohere
+### 1.6 Node: Embedding — OpenAI, Cohere, atau OpenRouter
+
+Tersedia tiga pilihan provider embedding. **Pilih satu dan konsisten** — jangan ganti provider di tengah jalan karena embedding dari model berbeda tidak kompatibel satu sama lain dalam vector space yang sama.
+
+---
 
 **Pilihan A: OpenAI `text-embedding-3-small`**
 
@@ -249,6 +427,8 @@ Body:
 
 Dimensi : 1536
 ```
+
+---
 
 **Pilihan B: Cohere `embed-multilingual-v3.0`** *(Rekomendasi untuk teks Indonesia)*
 
@@ -267,7 +447,59 @@ Body:
 Dimensi : 1024
 ```
 
-> **Rekomendasi:** Gunakan **Cohere `embed-multilingual-v3.0`** karena dilatih pada teks multibahasa termasuk Bahasa Indonesia. Kualitas embedding untuk teks UU lebih baik dibanding OpenAI yang dominan English.
+---
+
+**Pilihan C: OpenRouter Embedding**
+
+OpenRouter menyediakan akses ke berbagai model embedding via satu endpoint standar OpenAI. Cocok jika ingin semua API key dikonsolidasikan ke satu provider saja.
+
+```
+Endpoint : POST https://openrouter.ai/api/v1/embeddings
+Header   : Authorization: Bearer {{$env.OPENROUTER_API_KEY}}
+           HTTP-Referer: http://localhost:5678
+           X-Title: RAG Tax Indonesia
+
+Body:
+{
+  "input": "{{ $json.chunk_text }}",
+  "model": "{{$env.OPENROUTER_EMBEDDING_MODEL}}"
+}
+```
+
+**Output yang diambil:**
+```
+{{ $json.data[0].embedding }}
+```
+
+#### 🔄 Cara Mengganti Model Embedding di OpenRouter
+
+Ubah `OPENROUTER_EMBEDDING_MODEL` di `.env`:
+
+```env
+# OpenAI via OpenRouter (dimensi 1536)
+OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
+
+# OpenAI large via OpenRouter (dimensi 3072, lebih akurat)
+OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-large
+
+# Google text embedding (dimensi 768)
+OPENROUTER_EMBEDDING_MODEL=google/text-embedding-004
+```
+
+> ⚠️ **Penting:** Model embedding di OpenRouter mengikuti format OpenAI (`data[0].embedding`). Catat dimensi model yang dipilih karena harus sesuai dengan definisi kolom `vector(N)` di PostgreSQL. Jika mengganti model embedding, seluruh data di tabel `tax_documents` **harus diingest ulang dari awal** karena vector space-nya berubah.
+
+---
+
+**Perbandingan Pilihan Embedding:**
+
+| Provider | Model | Dimensi | Kelebihan |
+|---|---|---|---|
+| Cohere (direct) | `embed-multilingual-v3.0` | 1024 | ⭐ Terbaik untuk Bahasa Indonesia |
+| OpenAI (direct) | `text-embedding-3-small` | 1536 | Stabil, ekosistem luas |
+| OpenAI (direct) | `text-embedding-3-large` | 3072 | Akurasi tertinggi, mahal |
+| OpenRouter | `openai/text-embedding-3-small` | 1536 | Satu API key untuk semua |
+
+> **Rekomendasi:** Gunakan **Cohere `embed-multilingual-v3.0`** direct untuk kualitas terbaik pada Bahasa Indonesia, dengan Cohere Rerank sebagai pasangannya. Gunakan OpenRouter jika ingin menyederhanakan jumlah API key yang dikelola.
 
 ---
 
@@ -706,6 +938,21 @@ COHERE_API_KEY=your_cohere_api_key_here
 
 # OpenAI — opsional, jika memilih OpenAI sebagai embedding provider
 OPENAI_API_KEY=your_openai_api_key_here
+
+# OpenRouter — opsional, akses multi-model (LLM ingestion + embedding) via satu key
+OPENROUTER_API_KEY=your_openrouter_key_here
+
+# ─────────────────────────────────────────
+# Konfigurasi Model (ubah di sini tanpa menyentuh workflow n8n)
+# ─────────────────────────────────────────
+
+# Model untuk clean ingestion via OpenRouter
+# Contoh: google/gemini-2.5-flash | deepseek/deepseek-chat-v3-0324 | openai/gpt-4o-mini
+OPENROUTER_INGESTION_MODEL=google/gemini-2.5-flash
+
+# Model untuk embedding via OpenRouter
+# Contoh: openai/text-embedding-3-small | openai/text-embedding-3-large | google/text-embedding-004
+OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
 ```
 
 > ⚠️ **Jangan pernah commit file `.env` ke Git.** Pastikan sudah masuk ke `.gitignore`:
@@ -742,6 +989,15 @@ WEBHOOK_URL=http://localhost:5678/
 GEMINI_API_KEY=
 COHERE_API_KEY=
 OPENAI_API_KEY=
+
+# OpenRouter — opsional
+OPENROUTER_API_KEY=
+
+# ─────────────────────────────────────────
+# Konfigurasi Model OpenRouter
+# ─────────────────────────────────────────
+OPENROUTER_INGESTION_MODEL=google/gemini-2.5-flash
+OPENROUTER_EMBEDDING_MODEL=openai/text-embedding-3-small
 ```
 
 ```bash
@@ -840,6 +1096,9 @@ services:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       COHERE_API_KEY: ${COHERE_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_INGESTION_MODEL: ${OPENROUTER_INGESTION_MODEL}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL}
 
     ports:
       - "5678:5678"
@@ -978,8 +1237,8 @@ FASE PRODUKSI
 |---|---|---|
 | Container Orchestration | Docker Compose | Self-hosted, semua service dalam 1 stack |
 | Orchestrator MVP | n8n | Self-hosted via Docker |
-| Document Cleaning | Gemini Flash 2.5 API | Temperature 0.1 |
-| Embedding | Cohere `embed-multilingual-v3.0` | Atau OpenAI `text-embedding-3-small` |
+| Document Cleaning | Gemini Flash 2.5 API / OpenRouter | Temperature 0.1, model dapat diganti via `.env` |
+| Embedding | Cohere `embed-multilingual-v3.0` | Atau OpenAI / OpenRouter, pilih satu & konsisten |
 | Reranking | Cohere `rerank-multilingual-v3.0` | Cross-encoder, pasangan embed multilingual |
 | Vector Database | PostgreSQL + pgvector | Self-hosted via Docker |
 | LLM Answering | Gemini Flash 2.5 / GPT-4o | Fleksibel |
