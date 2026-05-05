@@ -1,0 +1,12 @@
+# Kredensial — WAJIB diabaikan
+.env
+
+# Volume data lokal
+n8n-data/
+postgres-data/
+
+# OS & editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
