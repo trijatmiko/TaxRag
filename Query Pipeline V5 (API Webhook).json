@@ -1,0 +1,205 @@
+{
+  "name": "Query Pipeline V5 (API Webhook)",
+  "nodes": [
+    {
+      "id": "webhookTrigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "name": "Webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "query-pajak",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "embedQuery",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [200, 0],
+      "name": "Embed User Query",
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$env.OPENROUTER_API_KEY}}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "keypair",
+        "bodyParameters": {
+          "parameters": [
+            { "name": "input", "value": "={{ $json.body.query }}" },
+            { "name": "model", "value": "={{ $env.OPENROUTER_EMBEDDING_MODEL }}" }
+          ]
+        },
+        "options": {
+          "response": { "response": { "responseFormat": "json" } }
+        }
+      }
+    },
+    {
+      "id": "vectorSearch",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [400, 0],
+      "name": "Postgres Vector Search",
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT doc_type, doc_number, doc_year, pasal_number, chunk_text, source_url, doc_title, 1 - (embedding <=> $1::vector) as similarity\nFROM tax_documents\nWHERE status_hukum = 'BERLAKU'\n  AND ($2::text IS NULL OR jenis_pajak = $2)\n  AND ($3::text IS NULL OR doc_type = $3)\nORDER BY embedding <=> $1::vector\nLIMIT 20;",
+        "options": {
+          "queryReplacement": "={{ ['[' + $json.data[0].embedding.join(',') + ']', $('Webhook').first().json.body.jenis_pajak || null, $('Webhook').first().json.body.doc_type || null] }}"
+        }
+      },
+      "credentials": {
+        "postgres": { "id": "PH1UhuuVUQLWkV2h", "name": "Postgres account" }
+      }
+    },
+    {
+      "id": "cohereRerank",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [600, 0],
+      "name": "OpenRouter Rerank",
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/rerank",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$env.OPENROUTER_API_KEY}}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: \"cohere/rerank-v3.5\",\n  query: $('Webhook').first().json.body.query,\n  documents: $input.all().map(item => item.json.chunk_text),\n  top_n: 5\n} }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "parseRerank",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [800, 0],
+      "name": "Parse Rerank Results",
+      "parameters": {
+        "jsCode": "const rerankResults = $input.first().json.results;\nconst originalChunks = $('Postgres Vector Search').all();\n\nconst rerankedChunks = rerankResults.map(result => {\n  const originalIndex = result.index;\n  const original = originalChunks[originalIndex].json;\n  return {\n    json: {\n      ...original,\n      rerank_score: result.relevance_score\n    }\n  };\n});\n\nreturn rerankedChunks;"
+      }
+    },
+    {
+      "id": "formatContext",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1000, 0],
+      "name": "Format Context for LLM",
+      "parameters": {
+        "jsCode": "const chunks = $input.all();\nconst originalQuery = $('Webhook').first().json.body.query;\n\nif (chunks.length === 0 || !chunks[0].json.chunk_text) {\n  return [{ json: { context: \"TIDAK ADA DOKUMEN YANG DITEMUKAN.\", query: originalQuery, sources: [], max_rerank_score: 0 } }];\n}\n\nlet contextText = \"\";\nlet maxScore = chunks[0].json.rerank_score || 0;\n\n// Gabungkan chunks menjadi context string\nconst contextParts = chunks.map((item, i) => {\n  const d = item.json;\n  return `--- Sumber ${i+1}: ${d.doc_type} No. ${d.doc_number} Tahun ${d.doc_year}, Pasal ${d.pasal_number || 'N/A'} ---\\n${d.chunk_text}`;\n});\n\ncontextText = contextParts.join('\\n\\n');\n\nreturn [{\n  json: {\n    query: originalQuery,\n    context: contextText,\n    max_rerank_score: maxScore,\n    sources: chunks.map(c => ({\n      doc_title: c.json.doc_title,\n      doc_type: c.json.doc_type,\n      doc_number: c.json.doc_number,\n      doc_year: c.json.doc_year,\n      pasal_number: c.json.pasal_number,\n      source_url: c.json.source_url,\n      similarity_score: c.json.similarity,\n      rerank_score: c.json.rerank_score,\n    }))\n  }\n}];"
+      }
+    },
+    {
+      "id": "ifRelevance",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1200, 0],
+      "name": "Cek Relevance Score",
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.max_rerank_score }}",
+              "operation": "largerEqual",
+              "value2": 0.20
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bypassOutput",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 200],
+      "name": "Format Bypass Output (False)",
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    answer: `Maaf, dari hasil pemindaian di database perpajakan saya, pertanyaan Anda tampaknya tidak berkaitan dengan hukum pajak yang saya ketahui.`,\n    query: $json.query,\n    sources: []\n  }\n}];"
+      }
+    },
+    {
+      "id": "respondWebhookFalse",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1600, 200],
+      "name": "Respond to Webhook (Ditolak)",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  status: \"rejected\",\n  answer: $json.answer,\n  query: $json.query,\n  sources: $json.sources\n} }}"
+      }
+    },
+    {
+      "id": "llmSynthesis",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [1400, -200],
+      "name": "LLM Synthesis (True)",
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer {{$env.OPENROUTER_API_KEY}}" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENROUTER_INGESTION_MODEL,\n  temperature: 0.1,\n  messages: [\n    {\n      role: 'system',\n      content: \"Kamu adalah asisten hukum pajak Indonesia yang ahli. Tugasmu adalah menjawab pertanyaan berdasarkan HANYA konteks peraturan perpajakan yang diberikan.\\n\\nAturan:\\n1. Jawab berdasarkan konteks yang diberikan saja. Jangan menambahkan informasi di luar konteks.\\n2. Sebutkan sumber (nama UU/PP/PMK dan nomor pasal) untuk setiap klaim hukum.\\n3. Jika pertanyaan tidak dapat dijawab dari konteks, katakan dengan jelas: 'Informasi ini tidak tersedia dalam database peraturan yang ada.'\\n4. Gunakan Bahasa Indonesia formal dan jelas.\\n5. Jika ada ketentuan yang saling berkaitan, jelaskan hubungannya.\"\n    },\n    {\n      role: 'user',\n      content: `Pertanyaan: ${$json.query}\\n\\nKonteks Peraturan Perpajakan:\\n${$json.context}\\n\\nBerikan jawaban yang komprehensif berdasarkan peraturan di atas.`\n    }\n  ]\n} }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "formatOutput",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1600, -200],
+      "name": "Format Final Output",
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    answer: $json.choices[0].message.content,\n    sources: $('Format Context for LLM').first().json.sources,\n    query: $('Format Context for LLM').first().json.query\n  }\n}];"
+      }
+    },
+    {
+      "id": "respondWebhookTrue",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1800, -200],
+      "name": "Respond to Webhook (Sukses)",
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  answer: $json.answer,\n  sources: $json.sources,\n  query: $json.query\n} }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": { "main": [ [ { "node": "Embed User Query", "type": "main", "index": 0 } ] ] },
+    "Embed User Query": { "main": [ [ { "node": "Postgres Vector Search", "type": "main", "index": 0 } ] ] },
+    "Postgres Vector Search": { "main": [ [ { "node": "OpenRouter Rerank", "type": "main", "index": 0 } ] ] },
+    "OpenRouter Rerank": { "main": [ [ { "node": "Parse Rerank Results", "type": "main", "index": 0 } ] ] },
+    "Parse Rerank Results": { "main": [ [ { "node": "Format Context for LLM", "type": "main", "index": 0 } ] ] },
+    "Format Context for LLM": { "main": [ [ { "node": "Cek Relevance Score", "type": "main", "index": 0 } ] ] },
+    "Cek Relevance Score": {
+      "main": [
+        [ { "node": "LLM Synthesis (True)", "type": "main", "index": 0 } ],
+        [ { "node": "Format Bypass Output (False)", "type": "main", "index": 0 } ]
+      ]
+    },
+    "Format Bypass Output (False)": { "main": [ [ { "node": "Respond to Webhook (Ditolak)", "type": "main", "index": 0 } ] ] },
+    "LLM Synthesis (True)": { "main": [ [ { "node": "Format Final Output", "type": "main", "index": 0 } ] ] },
+    "Format Final Output": { "main": [ [ { "node": "Respond to Webhook (Sukses)", "type": "main", "index": 0 } ] ] }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
