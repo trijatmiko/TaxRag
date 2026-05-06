@@ -518,9 +518,17 @@ OPENROUTER_EMBEDDING_MODEL=google/text-embedding-004
 
 **Tipe Node:** `Postgres`
 
-#### Langkah 1: Setup Database (Jalankan Sekali via DBeaver / psql)
+#### Langkah 1: Setup Database (via Docker — tidak perlu install tool tambahan)
 
-Sebelum menjalankan workflow, eksekusi DDL berikut ke database `rag_tax`:
+Jalankan perintah berikut dari terminal (PowerShell / CMD). DDL akan dieksekusi langsung di dalam container PostgreSQL:
+
+```bash
+Get-Content init-db/02-setup-rag.sql | docker exec -i rag_tax_postgres psql -U raguser -d rag_tax
+```
+
+> **Catatan:** File `init-db/02-setup-rag.sql` sudah disediakan di repository. Anda juga bisa menjalankan SQL secara manual via DBeaver atau psql jika sudah terinstall, namun **tidak wajib** — `docker exec` sudah cukup.
+
+DDL yang dijalankan (`init-db/02-setup-rag.sql`):
 
 ```sql
 -- 1. Aktifkan ekstensi
