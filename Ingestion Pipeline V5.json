@@ -1,0 +1,457 @@
+{
+  "name": "Ingestion Pipeline V5 (Two-Step Batch)",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "f9c0d732-8611-4da8-ad29-45f5f282bf82",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        5056,
+        272
+      ],
+      "name": "When clicking 'Execute workflow'"
+    },
+    {
+      "parameters": {
+        "fileSelector": "/home/node/.n8n-files/*",
+        "options": {}
+      },
+      "id": "48347401-0bc2-48bd-99a8-d83d4ba21291",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        5264,
+        272
+      ],
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "e8a9f70c-0dd7-4901-976a-91c2d68c769a",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        5456,
+        272
+      ],
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-url",
+              "name": "source_url",
+              "value": "https://jdih.kemenkeu.go.id/contoh.pdf",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f64fbbee-7bd4-470b-9ba4-e475a1b5f80f",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        5664,
+        272
+      ],
+      "name": "Set Source URL"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $('Extract from File').item.json.text || '';\nconst sourceUrl = $input.first().json.source_url;\nconst model = $env.OPENROUTER_INGESTION_MODEL;\n\nconst headText = text.substring(0, 15000);\n\nconst expectedStructure = {\n  metadata: {\n    doc_type: \"UU/PP/PMK/PER/KMK/SE\",\n    doc_number: \"angka saja\",\n    doc_year: \"4 digit\",\n    doc_title: \"judul lengkap setelah kata TENTANG\",\n    jenis_pajak: \"PPh/PPN/PPnBM/PBB/Bea_Cukai/KUP/Umum\",\n    status_hukum: \"BERLAKU/DICABUT/DIUBAH\",\n    berlaku_sejak: \"YYYY-MM-DD atau null\",\n    dicabut_oleh: \"nomor peraturan pencabut atau null\",\n    doc_category: \"TARIF/PROSEDUR/SANKSI/DEFINISI/PELAPORAN/Umum\"\n  }\n};\n\nconst systemPrompt = [\n  \"Kamu adalah asisten hukum ahli pajak Indonesia. Tugasmu adalah mengekstrak metadata dari dokumen hukum secara presisi.\",\n  \"\",\n  \"Aturan pemetaan (MAPPING) untuk field 'doc_type':\",\n  \"- 'UNDANG-UNDANG' atau 'UU' → UU\",\n  \"- 'PERATURAN PEMERINTAH' atau 'PP' → PP\",\n  \"- 'PERATURAN MENTERI KEUANGAN' atau 'PMK' → PMK\",\n  \"- 'PERATURAN DIREKTUR JENDERAL' atau 'PER' → PER\",\n  \"- 'KEPUTUSAN MENTERI KEUANGAN' atau 'KMK' → KMK\",\n  \"- 'SURAT EDARAN' atau 'SE' → SE\",\n  \"\",\n  \"Output WAJIB berupa JSON murni tanpa teks apapun di luar blok JSON, dengan struktur berikut:\",\n  JSON.stringify(expectedStructure, null, 2)\n].join(\"\\n\");\n\nconst userPrompt = \"Ekstrak metadata dari dokumen berikut ini:\\n\\n\" + headText;\n\nreturn [{\n  json: {\n    model: model,\n    temperature: 0.1,\n    max_tokens: 512,\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: userPrompt }\n    ],\n    raw_full_text: text,\n    source_url: sourceUrl\n  }\n}];"
+      },
+      "id": "73f39363-850a-4c4a-990c-1e001f7769d6",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        5856,
+        272
+      ],
+      "name": "Prepare Metadata Request"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://aisuka.com"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAG Tax Indonesia"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": {{ JSON.stringify($json.model) }}, \"temperature\": {{ $json.temperature }}, \"max_tokens\": {{ $json.max_tokens }}, \"messages\": {{ JSON.stringify($json.messages) }}}",
+        "options": {}
+      },
+      "id": "bf04a684-9ca0-4ca0-8c45-442718dd332a",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        6064,
+        272
+      ],
+      "name": "LLM Metadata",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $json.choices[0].message.content;\nconst rawFullText = $('Prepare Metadata Request').item.json.raw_full_text;\nconst sourceUrl = $('Prepare Metadata Request').item.json.source_url;\n\nlet cleaned = raw.trim();\nif (cleaned.startsWith('```json')) cleaned = cleaned.substring(7).trim();\nelse if (cleaned.startsWith('```')) cleaned = cleaned.substring(3).trim();\nif (cleaned.endsWith('```')) cleaned = cleaned.substring(0, cleaned.length - 3).trim();\n\nif (!cleaned.startsWith('{')) {\n  const jsonStart = cleaned.indexOf('{');\n  if (jsonStart !== -1) cleaned = cleaned.substring(jsonStart);\n}\nif (!cleaned.endsWith('}')) {\n  const jsonEnd = cleaned.lastIndexOf('}');\n  if (jsonEnd !== -1) cleaned = cleaned.substring(0, jsonEnd + 1);\n}\n\nlet parsed = {};\ntry {\n  parsed = JSON.parse(cleaned);\n} catch(e) {\n  throw new Error('Metadata LLM gagal di-parse sebagai JSON. Raw Output:\\n' + cleaned);\n}\n\nconst meta = parsed.metadata || parsed;\n\nconst VALID_DOC_TYPE    = ['UU','PP','PMK','PER','KMK','SE','Umum'];\nconst VALID_JENIS_PAJAK = ['PPh','PPN','PPnBM','PBB','Bea_Cukai','KUP','Umum'];\nconst VALID_STATUS      = ['BERLAKU','DICABUT','DIUBAH'];\nconst VALID_CATEGORY    = ['TARIF','PROSEDUR','SANKSI','DEFINISI','PELAPORAN','Umum'];\n\nif (!VALID_DOC_TYPE.includes(meta.doc_type)) {\n  throw new Error(`doc_type tidak valid: \"${meta.doc_type}\". Harus salah satu dari: ${VALID_DOC_TYPE.join(', ')}`);\n}\nif (!VALID_JENIS_PAJAK.includes(meta.jenis_pajak)) {\n  throw new Error(`jenis_pajak tidak valid: \"${meta.jenis_pajak}\". Harus salah satu dari: ${VALID_JENIS_PAJAK.join(', ')}`);\n}\n\nreturn [{\n  json: {\n    metadata: {\n      doc_type:     meta.doc_type     || null,\n      doc_number:   meta.doc_number   || null,\n      doc_year:     meta.doc_year     || null,\n      doc_title:    meta.doc_title    || null,\n      jenis_pajak:  meta.jenis_pajak  || null,\n      status_hukum: VALID_STATUS.includes(meta.status_hukum) ? meta.status_hukum : 'BERLAKU',\n      berlaku_sejak: meta.berlaku_sejak || null,\n      dicabut_oleh:  meta.dicabut_oleh  || null,\n      doc_category:  VALID_CATEGORY.includes(meta.doc_category) ? meta.doc_category : 'Umum',\n      source_url: sourceUrl\n    },\n    raw_full_text: rawFullText\n  }\n}];"
+      },
+      "id": "af7d8759-8e81-42c7-b6ef-61241092ba0c",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6256,
+        272
+      ],
+      "name": "Parse Metadata"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rawFullText = $input.first().json.raw_full_text;\nconst metadata = $input.first().json.metadata;\nconst model = $env.OPENROUTER_INGESTION_MODEL;\n\nconst CHUNK_CHAR_SIZE = 15000;\nconst chunks = [];\nfor (let i = 0; i < rawFullText.length; i += CHUNK_CHAR_SIZE) {\n  chunks.push(rawFullText.substring(i, i + CHUNK_CHAR_SIZE));\n}\n\nconst systemPrompt = \"Kamu adalah asisten hukum. Tugasmu hanya membersihkan teks OCR dokumen hukum ke Markdown yang rapi. \"\n  + \"HAPUS header, footer, nomor halaman, dan tanda tangan pejabat. \"\n  + \"PERTAHANKAN dan FORMAT struktur pasal: ## Pasal 1, ### Ayat (1), #### Huruf a. \"\n  + \"JANGAN tambahkan penjelasan apapun, JANGAN bungkus dengan JSON atau code block. \"\n  + \"HANYA output Markdown murni.\";\n\nreturn chunks.map((chunkText, index) => ({\n  json: {\n    chunk_index: index,\n    total_chunks: chunks.length,\n    metadata: metadata,\n    model: model,\n    temperature: 0.1,\n    max_tokens: 8192,\n    messages: [\n      { role: 'system', content: systemPrompt },\n      { role: 'user', content: `Bersihkan teks bagian ini ke Markdown:\\n\\n${chunkText}` }\n    ]\n  }\n}));"
+      },
+      "id": "afdcabbf-81ab-4ab3-8c9f-a16b9fc9ab33",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6464,
+        272
+      ],
+      "name": "Prepare Cleaning Requests"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://aisuka.com"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAG Tax Indonesia"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": {{ JSON.stringify($json.model) }}, \"temperature\": {{ $json.temperature }}, \"max_tokens\": {{ $json.max_tokens }}, \"messages\": {{ JSON.stringify($json.messages) }}}",
+        "options": {}
+      },
+      "id": "cf969ff1-845d-4dbf-9e8a-e5e8725a8bc2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        6656,
+        272
+      ],
+      "name": "LLM Clean Batch",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\n\nitems.sort((a, b) => a.json.chunk_index - b.json.chunk_index);\n\nlet fullCleanedMarkdown = '';\nfor (const item of items) {\n  let raw = item.json.choices[0].message.content.trim();\n  if (raw.startsWith('```markdown')) raw = raw.substring(11).trim();\n  else if (raw.startsWith('```')) raw = raw.substring(3).trim();\n  if (raw.endsWith('```')) raw = raw.substring(0, raw.length - 3).trim();\n  fullCleanedMarkdown += raw + '\\n\\n';\n}\n\nconst metadata = $('Parse Metadata').first().json.metadata;\n\nreturn [{\n  json: {\n    cleanedMarkdown: fullCleanedMarkdown,\n    ...metadata\n  }\n}];"
+      },
+      "id": "68168fc4-ac90-40cf-841e-c974dafb2f80",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        6864,
+        272
+      ],
+      "name": "Merge Cleaned Markdown"
+    },
+    {
+      "parameters": {
+        "jsCode": "const markdownText = $input.first().json.cleanedMarkdown;\nconst sourceUrl   = $input.first().json.source_url;\nconst docType     = $input.first().json.doc_type;\nconst docNumber   = $input.first().json.doc_number;\nconst docYear     = $input.first().json.doc_year;\nconst docTitle    = $input.first().json.doc_title;\nconst jenisPajak  = $input.first().json.jenis_pajak;\nconst statusHukum = $input.first().json.status_hukum;\nconst berlakuSejak = $input.first().json.berlaku_sejak;\nconst dicabutOleh  = $input.first().json.dicabut_oleh;\nconst docCategory  = $input.first().json.doc_category;\n\nconst CHUNK_SIZE     = 1000;\nconst CHUNK_OVERLAP  = 150;\nconst MIN_CHUNK_SIZE = 100;\n\nfunction splitByPasal(text) {\n  const p = /(?=##\\s+(?:Pasal|BAB|Bagian|Paragraf)\\s+\\d+)/gi;\n  return text.split(p).filter(c => c.trim().length > MIN_CHUNK_SIZE);\n}\n\nfunction slidingWindow(text, size, overlap) {\n  const chunks = [];\n  let start = 0;\n  while (start < text.length) {\n    const end = Math.min(start + size, text.length);\n    chunks.push(text.slice(start, end));\n    start += size - overlap;\n  }\n  return chunks;\n}\n\nfunction extractPasalNumber(chunkText) {\n  const match = chunkText.match(/##\\s+Pasal\\s+(\\d+[A-Z]?)/i);\n  return match ? match[1] : null;\n}\n\nconst rawChunks = splitByPasal(markdownText);\nconst finalChunks = [];\n\nfor (const chunk of rawChunks) {\n  if (chunk.length <= CHUNK_SIZE) {\n    finalChunks.push(chunk);\n  } else {\n    const subChunks = slidingWindow(chunk, CHUNK_SIZE, CHUNK_OVERLAP);\n    finalChunks.push(...subChunks);\n  }\n}\n\nreturn finalChunks.map((chunk, index) => ({\n  json: {\n    chunk_text:    chunk.trim(),\n    chunk_index:   index,\n    total_chunks:  finalChunks.length,\n    pasal_number:  extractPasalNumber(chunk),\n    source_url:    sourceUrl,\n    doc_type:      docType,\n    doc_number:    docNumber,\n    doc_year:      docYear,\n    doc_title:     docTitle,\n    jenis_pajak:   jenisPajak,\n    status_hukum:  statusHukum,\n    berlaku_sejak: berlakuSejak,\n    dicabut_oleh:  dicabutOleh,\n    doc_category:  docCategory,\n    ingested_at:   new Date().toISOString(),\n  }\n}));"
+      },
+      "id": "5e889a16-c5c3-4f23-9f7f-49f0fe9dadc4",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        7056,
+        272
+      ],
+      "name": "Semantic Chunking by Pasal"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "44996107-ecb6-4a64-9dee-840061102724",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        7216,
+        256
+      ],
+      "name": "Split In Batches"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://aisuka.com"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAG Tax Indonesia"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ $json.chunk_text }}"
+            },
+            {
+              "name": "model",
+              "value": "={{ $env.OPENROUTER_EMBEDDING_MODEL }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "99dcf382-7d6a-4ab3-b759-8c7cd437f391",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        7440,
+        272
+      ],
+      "name": "Embedding",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO tax_documents (\n  id, chunk_text, chunk_index, pasal_number,\n  doc_type, doc_number, doc_year, doc_title,\n  jenis_pajak, source_url, status_hukum, berlaku_sejak,\n  dicabut_oleh, doc_category, ingested_at, embedding\n)\nVALUES (\n  gen_random_uuid(),\n  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,\n  NOW(),\n  $14::vector\n)\nON CONFLICT (source_url, chunk_index)\nDO UPDATE SET\n  chunk_text    = EXCLUDED.chunk_text,\n  pasal_number  = EXCLUDED.pasal_number,\n  doc_type      = EXCLUDED.doc_type,\n  doc_number    = EXCLUDED.doc_number,\n  doc_year      = EXCLUDED.doc_year,\n  doc_title     = EXCLUDED.doc_title,\n  jenis_pajak   = EXCLUDED.jenis_pajak,\n  status_hukum  = EXCLUDED.status_hukum,\n  berlaku_sejak = EXCLUDED.berlaku_sejak,\n  dicabut_oleh  = EXCLUDED.dicabut_oleh,\n  doc_category  = EXCLUDED.doc_category,\n  embedding     = EXCLUDED.embedding,\n  ingested_at   = NOW();",
+        "options": {
+          "queryReplacement": "={{ [\n  $('Semantic Chunking by Pasal').item.json.chunk_text,\n  $('Semantic Chunking by Pasal').item.json.chunk_index,\n  $('Semantic Chunking by Pasal').item.json.pasal_number || null,\n  $('Semantic Chunking by Pasal').item.json.doc_type,\n  $('Semantic Chunking by Pasal').item.json.doc_number,\n  $('Semantic Chunking by Pasal').item.json.doc_year,\n  $('Semantic Chunking by Pasal').item.json.doc_title,\n  $('Semantic Chunking by Pasal').item.json.jenis_pajak,\n  $('Semantic Chunking by Pasal').item.json.source_url,\n  $('Semantic Chunking by Pasal').item.json.status_hukum,\n  $('Semantic Chunking by Pasal').item.json.berlaku_sejak,\n  $('Semantic Chunking by Pasal').item.json.dicabut_oleh,\n  $('Semantic Chunking by Pasal').item.json.doc_category,\n  '[' + $json.data[0].embedding.join(',') + ']'\n] }}"
+        }
+      },
+      "id": "4274e5e3-04fb-4b6d-8c4c-08f6af322695",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        7616,
+        240
+      ],
+      "name": "Execute SQL Query",
+      "credentials": {
+        "postgres": {
+          "id": "PH1UhuuVUQLWkV2h",
+          "name": "Postgres account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "When clicking 'Execute workflow'": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Set Source URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Source URL": {
+      "main": [
+        [
+          {
+            "node": "Prepare Metadata Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Metadata Request": {
+      "main": [
+        [
+          {
+            "node": "LLM Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Metadata": {
+      "main": [
+        [
+          {
+            "node": "Parse Metadata",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Metadata": {
+      "main": [
+        [
+          {
+            "node": "Prepare Cleaning Requests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Cleaning Requests": {
+      "main": [
+        [
+          {
+            "node": "LLM Clean Batch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Clean Batch": {
+      "main": [
+        [
+          {
+            "node": "Merge Cleaned Markdown",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Cleaned Markdown": {
+      "main": [
+        [
+          {
+            "node": "Semantic Chunking by Pasal",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Semantic Chunking by Pasal": {
+      "main": [
+        [
+          {
+            "node": "Split In Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embedding": {
+      "main": [
+        [
+          {
+            "node": "Execute SQL Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split In Batches": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "9d1035f6-ef16-46b8-ad3f-89d90f16b97e",
+  "meta": {
+    "instanceId": "75338ccea812df2bb6009edd0062060ab47cc9cf823475a7cea9fef082dc9475"
+  },
+  "id": "a5pVGZ3ojfNyXTdD",
+  "tags": []
+}
