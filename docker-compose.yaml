@@ -1,0 +1,202 @@
+services:
+
+  # ─────────────────────────────────────────
+  # PostgreSQL + pgvector
+  # ─────────────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag_tax_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    networks:
+      - speakup-network
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # n8n
+  # ─────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: rag_tax_n8n
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: ${N8N_BASIC_AUTH_ACTIVE}
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+      N8N_BLOCK_ENV_ACCESS_IN_EXPRESSIONS: ${N8N_BLOCK_ENV_ACCESS_IN_EXPRESSIONS}
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      N8N_RUNNERS_ENABLED: "false"
+      N8N_HOST: ${N8N_HOST}
+      N8N_PORT: ${N8N_PORT}
+      N8N_PROTOCOL: ${N8N_PROTOCOL}
+      NODE_FUNCTION_ALLOW_BUILTIN: crypto
+      N8N_CORS_ENABLE: "true"
+      N8N_CORS_ORIGIN: "*"
+      WEBHOOK_URL: ${WEBHOOK_URL:-http://localhost:5678/}
+      GENERIC_TIMEZONE: Asia/Jakarta
+      TZ: Asia/Jakarta
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n_internal
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      COHERE_API_KEY: ${COHERE_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      OPENROUTER_INGESTION_MODEL: ${OPENROUTER_INGESTION_MODEL}
+      OPENROUTER_EMBEDDING_MODEL: ${OPENROUTER_EMBEDDING_MODEL}
+      OPENROUTER_SYNTHESIS_MODEL: ${OPENROUTER_SYNTHESIS_MODEL}
+      GOOGLE_SHEETS_CLIENT_ID: ${GOOGLE_SHEETS_CLIENT_ID}
+      GOOGLE_SHEETS_CLIENT_SECRET: ${GOOGLE_SHEETS_CLIENT_SECRET}
+      # ── ENGLISH AI TUTOR ──
+      OPENROUTER_ENGLISH_MODEL: ${OPENROUTER_ENGLISH_MODEL}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_BUCKET: ${MINIO_BUCKET:-audio-uploads}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_REGION: us-east-1
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - C:/data-ingestion:/home/node/.n8n-files
+    networks:
+      - speakup-network
+
+  # ─────────────────────────────────────────
+  # MinIO — Object Storage (audio uploads)
+  # ─────────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: english_ai_minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9002:9000"
+      - "9003:9001"
+    networks:
+      - speakup-network
+    healthcheck:
+      test: [ "CMD", "mc", "ready", "local" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────
+  # MinIO Init — buat bucket otomatis
+  # ─────────────────────────────────────────
+  minio_init:
+    image: minio/mc:latest
+    container_name: english_ai_minio_init
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 $${MINIO_ACCESS_KEY} $${MINIO_SECRET_KEY};
+        mc mb --ignore-existing local/$${MINIO_BUCKET:-audio-uploads};
+        mc anonymous set download local/$${MINIO_BUCKET:-audio-uploads}/audio;
+        echo 'Policy audio public read-only siap';
+      "
+    environment:
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: ${MINIO_BUCKET:-audio-uploads}
+    networks:
+      - speakup-network
+
+  # ── ENGLISH AI TUTOR ─────────────────────
+  # Whisper STT (non-aktif di MVP, uncomment saat siap)
+  # ─────────────────────────────────────────
+  # whisper:
+  #   image: onerahmet/openai-whisper-asr-webservice:latest
+  #   container_name: english_ai_whisper
+  #   restart: unless-stopped
+  #   ports:
+  #     - "9000:9000"
+  #   environment:
+  #     - ASR_MODEL=small
+  #     - ASR_ENGINE=openai_whisper
+  #   volumes:
+  #     - whisper_models:/root/.cache/whisper
+  #   networks:
+  #     - speakup-network
+
+  # ── ENGLISH AI TUTOR ─────────────────────
+  # Kokoro TTS
+  # ─────────────────────────────────────────
+  # kokoro:
+  #   image: ghcr.io/remsky/kokoro-fastapi-cpu:v0.2.2
+  #   container_name: english_ai_kokoro
+  #   restart: unless-stopped
+  #   ports:
+  #     - "8880:8880"
+  #   volumes:
+  #     - kokoro_models:/app/models
+  #   networks:
+  #     - speakup-network
+
+  # ─────────────────────────────────────────
+  # Next.js — Frontend
+  # ─────────────────────────────────────────
+  frontend:
+    build:
+      context: ./speakup-frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_N8N_BASE_URL: ${NEXT_PUBLIC_N8N_BASE_URL:-http://localhost:5678/webhook}
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+        NEXT_PUBLIC_MINIO_URL: ${NEXT_PUBLIC_MINIO_URL:-http://localhost:9002}
+        NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+        NEXT_PUBLIC_SOUND_CORRECT_URL: ${NEXT_PUBLIC_SOUND_CORRECT_URL:-/sounds/correct.mp3}
+        NEXT_PUBLIC_SOUND_WRONG_URL: ${NEXT_PUBLIC_SOUND_WRONG_URL:-/sounds/wrong.mp3}
+    container_name: speakup-frontend
+    restart: unless-stopped
+    depends_on:
+      - n8n
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_MINIO_URL: ${NEXT_PUBLIC_MINIO_URL:-http://localhost:9002}
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+      NEXT_PUBLIC_SOUND_CORRECT_URL: ${NEXT_PUBLIC_SOUND_CORRECT_URL:-/sounds/correct.mp3}
+      NEXT_PUBLIC_SOUND_WRONG_URL: ${NEXT_PUBLIC_SOUND_WRONG_URL:-/sounds/wrong.mp3}
+    networks:
+      - speakup-network
+
+volumes:
+  postgres_data:
+  n8n_data:
+  minio_data:
+  whisper_models:
+  kokoro_models:
+
+networks:
+  speakup-network:
+    driver: bridge

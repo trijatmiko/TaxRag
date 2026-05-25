@@ -1,0 +1,1121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+  <title>SpeakUp — Sign In</title>
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,wght@0,300;0,400;0,500;1,300&display=swap" rel="stylesheet"/>
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg:       #0d0f14;
+      --surface:  #151820;
+      --surface2: #1c2030;
+      --border:   #252a3a;
+      --accent:   #4f8cff;
+      --accent2:  #a78bfa;
+      --green:    #34d399;
+      --red:      #f87171;
+      --yellow:   #fbbf24;
+      --text:     #e8eaf2;
+      --muted:    #6b7290;
+      --radius:   16px;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      overflow: hidden;
+    }
+
+    /* ── Background noise grain ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Glow orbs ── */
+    .orb {
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(120px);
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.18;
+    }
+    .orb-1 {
+      width: 600px; height: 600px;
+      background: var(--accent);
+      top: -200px; left: -150px;
+      animation: orbFloat1 12s ease-in-out infinite;
+    }
+    .orb-2 {
+      width: 400px; height: 400px;
+      background: var(--accent2);
+      bottom: -100px; right: -100px;
+      animation: orbFloat2 15s ease-in-out infinite;
+    }
+    @keyframes orbFloat1 {
+      0%, 100% { transform: translate(0, 0); }
+      50%       { transform: translate(40px, 30px); }
+    }
+    @keyframes orbFloat2 {
+      0%, 100% { transform: translate(0, 0); }
+      50%       { transform: translate(-30px, -40px); }
+    }
+
+    /* ── Layout ── */
+    .page {
+      position: relative;
+      z-index: 1;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 48px 44px;
+      width: 100%;
+      max-width: 420px;
+      display: flex;
+      flex-direction: column;
+      gap: 32px;
+      position: relative;
+      overflow: hidden;
+      animation: cardIn 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes cardIn {
+      from { opacity: 0; transform: translateY(24px) scale(0.98); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
+    }
+
+    /* Subtle top-border accent line */
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 10%; right: 10%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.6;
+    }
+
+    /* ── Logo ── */
+    .logo {
+      font-family: 'Syne', sans-serif;
+      font-weight: 800;
+      font-size: 22px;
+      letter-spacing: -0.5px;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .logo-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px var(--accent);
+    }
+
+    /* ── Header ── */
+    .card-header {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card-title {
+      font-family: 'Syne', sans-serif;
+      font-weight: 700;
+      font-size: 26px;
+      letter-spacing: -0.5px;
+      color: var(--text);
+      line-height: 1.2;
+    }
+    .card-subtitle {
+      font-size: 14px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    /* ── Divider ── */
+    .divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: 0.5px;
+    }
+    .divider::before, .divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── OAuth buttons ── */
+    .oauth-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn-oauth {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      padding: 13px 18px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-decoration: none;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-oauth::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: white;
+      opacity: 0;
+      transition: opacity 0.15s;
+    }
+    .btn-oauth:hover {
+      border-color: var(--muted);
+      background: #20253a;
+      transform: translateY(-1px);
+    }
+    .btn-oauth:active {
+      transform: translateY(0);
+    }
+    .btn-oauth:active::after { opacity: 0.03; }
+
+    .btn-oauth .oauth-icon {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    .btn-oauth .oauth-label {
+      flex: 1;
+      text-align: center;
+    }
+
+    /* ── OR email section ── */
+    .email-section {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ── Input fields ── */
+    .input-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .input-label {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .input-wrap {
+      position: relative;
+    }
+    .input-wrap .material-symbols-outlined {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 18px;
+      color: var(--muted);
+      pointer-events: none;
+      transition: color 0.2s;
+      font-variation-settings: 'FILL' 0, 'wght' 300;
+    }
+    input[type="email"],
+    input[type="password"],
+    input[type="text"] {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      padding: 11px 14px 11px 42px;
+      outline: none;
+      appearance: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.12);
+    }
+    input:focus + .material-symbols-outlined,
+    .input-wrap:focus-within .material-symbols-outlined {
+      color: var(--accent);
+    }
+    input::placeholder { color: var(--muted); opacity: 0.6; }
+
+    /* Password toggle */
+    .pw-toggle {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 4px;
+      display: flex;
+      align-items: center;
+      transition: color 0.2s;
+      font-variation-settings: 'FILL' 0, 'wght' 300;
+    }
+    .pw-toggle:hover { color: var(--text); }
+    .pw-toggle .material-symbols-outlined { font-size: 18px; }
+
+    input[type="password"] { padding-right: 42px; }
+    input.has-pw-toggle { padding-right: 42px; }
+
+    /* ── Error message ── */
+    .field-error {
+      font-size: 12px;
+      color: var(--red);
+      display: none;
+      align-items: center;
+      gap: 4px;
+    }
+    .field-error.visible { display: flex; }
+    .field-error .material-symbols-outlined { font-size: 14px; font-variation-settings: 'FILL' 1, 'wght' 400; }
+
+    /* ── Primary button ── */
+    .btn-primary {
+      width: 100%;
+      padding: 14px;
+      border-radius: 12px;
+      border: none;
+      background: var(--accent);
+      color: #fff;
+      font-family: 'Syne', sans-serif;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.3px;
+      position: relative;
+      overflow: hidden;
+    }
+    .btn-primary:hover {
+      background: #3a7aee;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(79, 140, 255, 0.3);
+    }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled {
+      background: var(--surface2);
+      color: var(--muted);
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    .btn-primary .btn-spinner {
+      display: none;
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      margin: 0 auto;
+    }
+    .btn-primary.loading .btn-label { display: none; }
+    .btn-primary.loading .btn-spinner { display: block; }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ── Forgot / Terms ── */
+    .link-muted {
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-family: 'DM Sans', sans-serif;
+    }
+    .link-muted:hover { color: var(--text); }
+    .link-accent {
+      font-size: 13px;
+      color: var(--accent);
+      text-decoration: none;
+      transition: color 0.2s;
+      cursor: pointer;
+      background: none;
+      border: none;
+      font-family: 'DM Sans', sans-serif;
+    }
+    .link-accent:hover { color: #6fa3ff; text-decoration: underline; }
+
+    .row-between {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .terms {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      line-height: 1.5;
+    }
+    .terms a {
+      color: var(--muted);
+      text-decoration: underline;
+      transition: color 0.2s;
+    }
+    .terms a:hover { color: var(--text); }
+
+    /* ── Tab switcher (Sign In / Sign Up) ── */
+    .tabs {
+      display: flex;
+      background: var(--surface2);
+      border-radius: 10px;
+      padding: 4px;
+      gap: 4px;
+    }
+    .tab {
+      flex: 1;
+      padding: 8px;
+      border-radius: 7px;
+      border: none;
+      background: none;
+      color: var(--muted);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab.active {
+      background: var(--surface);
+      color: var(--text);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+
+    /* ── Form panels ── */
+    .form-panel {
+      display: none;
+      flex-direction: column;
+      gap: 16px;
+      animation: fadeUp 0.25s ease both;
+    }
+    .form-panel.active { display: flex; }
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Name row for signup ── */
+    .name-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(20px);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px 20px;
+      font-size: 14px;
+      color: var(--text);
+      z-index: 999;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      white-space: nowrap;
+      max-width: calc(100vw - 40px);
+    }
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .toast.error {
+      border-color: rgba(248, 113, 113, 0.4);
+      background: rgba(248, 113, 113, 0.08);
+    }
+    .toast.success {
+      border-color: rgba(52, 211, 153, 0.4);
+      background: rgba(52, 211, 153, 0.08);
+    }
+
+    /* ── Success state ── */
+    .success-panel {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      text-align: center;
+      padding: 16px 0;
+      animation: fadeUp 0.4s ease both;
+    }
+    .success-panel.active { display: flex; }
+    .success-icon {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: rgba(52, 211, 153, 0.12);
+      border: 1px solid rgba(52, 211, 153, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+    }
+    .success-icon .material-symbols-outlined {
+      color: var(--green);
+      font-size: 32px;
+      font-variation-settings: 'FILL' 1, 'wght' 400;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 480px) {
+      .card { padding: 36px 24px; }
+      .name-row { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Ambient background -->
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+
+<div class="page">
+  <div class="card">
+
+    <!-- Logo -->
+    <div class="logo">
+      <div class="logo-dot"></div>
+      SpeakUp
+    </div>
+
+    <!-- Card header -->
+    <div class="card-header">
+      <div class="card-title" id="cardTitle">Welcome back</div>
+      <div class="card-subtitle" id="cardSubtitle">Sign in to continue your English journey</div>
+    </div>
+
+    <!-- Tab switcher -->
+    <div class="tabs">
+      <button class="tab active" id="tabSignin" onclick="switchTab('signin')">Sign In</button>
+      <button class="tab" id="tabSignup" onclick="switchTab('signup')">Sign Up</button>
+    </div>
+
+    <!-- OAuth buttons (shared) -->
+    <div class="oauth-group">
+      <button class="btn-oauth" id="btnGoogle" onclick="handleGoogleOAuth()">
+        <!-- Google SVG icon -->
+        <svg class="oauth-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+          <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+          <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/>
+          <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+        </svg>
+        <span class="oauth-label" id="googleLabel">Continue with Google</span>
+      </button>
+    </div>
+
+    <!-- Divider -->
+    <div class="divider">or</div>
+
+    <!-- ───── SIGN IN PANEL ───── -->
+    <div class="form-panel active" id="panelSignin">
+      <div class="input-group">
+        <div class="input-label">Email</div>
+        <div class="input-wrap">
+          <input type="email" id="signinEmail" placeholder="you@example.com" autocomplete="email"/>
+          <span class="material-symbols-outlined">mail</span>
+        </div>
+        <div class="field-error" id="signinEmailError">
+          <span class="material-symbols-outlined">error</span>
+          <span class="field-error-text"></span>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <div class="row-between">
+          <div class="input-label">Password</div>
+          <button class="link-muted" onclick="showForgotPassword()">Forgot password?</button>
+        </div>
+        <div class="input-wrap">
+          <input type="password" id="signinPassword" placeholder="Your password" autocomplete="current-password" class="has-pw-toggle"/>
+          <span class="material-symbols-outlined">lock</span>
+          <button class="pw-toggle" onclick="togglePassword('signinPassword', this)" tabindex="-1" type="button">
+            <span class="material-symbols-outlined">visibility</span>
+          </button>
+        </div>
+        <div class="field-error" id="signinPasswordError">
+          <span class="material-symbols-outlined">error</span>
+          <span class="field-error-text"></span>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="btnSignin" onclick="handleEmailSignIn()">
+        <span class="btn-label">Sign In</span>
+        <div class="btn-spinner"></div>
+      </button>
+
+      <div class="terms">
+        Don't have an account?
+        <button class="link-accent" onclick="switchTab('signup')">Create one</button>
+      </div>
+    </div>
+
+    <!-- ───── SIGN UP PANEL ───── -->
+    <div class="form-panel" id="panelSignup">
+      <div class="name-row">
+        <div class="input-group">
+          <div class="input-label">First Name</div>
+          <div class="input-wrap">
+            <input type="text" id="signupFirst" placeholder="John" autocomplete="given-name"/>
+            <span class="material-symbols-outlined">person</span>
+          </div>
+        </div>
+        <div class="input-group">
+          <div class="input-label">Last Name</div>
+          <div class="input-wrap">
+            <input type="text" id="signupLast" placeholder="Doe" autocomplete="family-name"/>
+            <span class="material-symbols-outlined">person</span>
+          </div>
+        </div>
+      </div>
+      <div class="field-error" id="signupNameError">
+        <span class="material-symbols-outlined">error</span>
+        <span class="field-error-text"></span>
+      </div>
+
+      <div class="input-group">
+        <div class="input-label">Email</div>
+        <div class="input-wrap">
+          <input type="email" id="signupEmail" placeholder="you@example.com" autocomplete="email"/>
+          <span class="material-symbols-outlined">mail</span>
+        </div>
+        <div class="field-error" id="signupEmailError">
+          <span class="material-symbols-outlined">error</span>
+          <span class="field-error-text"></span>
+        </div>
+      </div>
+
+      <div class="input-group">
+        <div class="input-label">Password</div>
+        <div class="input-wrap">
+          <input type="password" id="signupPassword" placeholder="Min. 8 characters" autocomplete="new-password" class="has-pw-toggle"/>
+          <span class="material-symbols-outlined">lock</span>
+          <button class="pw-toggle" onclick="togglePassword('signupPassword', this)" tabindex="-1" type="button">
+            <span class="material-symbols-outlined">visibility</span>
+          </button>
+        </div>
+        <div class="field-error" id="signupPasswordError">
+          <span class="material-symbols-outlined">error</span>
+          <span class="field-error-text"></span>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="btnSignup" onclick="handleEmailSignUp()">
+        <span class="btn-label">Create Account</span>
+        <div class="btn-spinner"></div>
+      </button>
+
+      <div class="terms">
+        By signing up you agree to our
+        <a href="#">Terms of Service</a> and <a href="#">Privacy Policy</a>
+      </div>
+    </div>
+
+    <!-- ───── FORGOT PASSWORD PANEL ───── -->
+    <div class="form-panel" id="panelForgot">
+      <div class="input-group">
+        <div class="input-label">Email</div>
+        <div class="input-wrap">
+          <input type="email" id="forgotEmail" placeholder="you@example.com" autocomplete="email"/>
+          <span class="material-symbols-outlined">mail</span>
+        </div>
+        <div class="field-error" id="forgotEmailError">
+          <span class="material-symbols-outlined">error</span>
+          <span class="field-error-text"></span>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="btnForgot" onclick="handleForgotPassword()">
+        <span class="btn-label">Send Reset Link</span>
+        <div class="btn-spinner"></div>
+      </button>
+
+      <div class="terms">
+        <button class="link-accent" onclick="switchTab('signin')">← Back to Sign In</button>
+      </div>
+    </div>
+
+    <!-- ───── SUCCESS PANEL ───── -->
+    <div class="success-panel" id="panelSuccess">
+      <div class="success-icon">
+        <span class="material-symbols-outlined">mark_email_read</span>
+      </div>
+      <div>
+        <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:18px;margin-bottom:6px;" id="successTitle">Check your inbox</div>
+        <div style="font-size:13px;color:var(--muted);line-height:1.6;" id="successDesc">We sent a reset link to your email address.</div>
+      </div>
+      <button class="link-accent" onclick="switchTab('signin')">← Back to Sign In</button>
+    </div>
+
+  </div><!-- /card -->
+</div><!-- /page -->
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ============================================================
+  // CONFIG — sesuaikan 3 baris ini sebelum deploy
+  // ============================================================
+
+  // [1] URL n8n kamu — tanpa trailing slash
+  //     Local  : 'http://localhost:5678/webhook'
+  //     Cloud  : 'https://n8n.yourdomain.com/webhook'
+  const N8N_BASE_URL = 'http://localhost:5678/webhook';
+
+  // [2] Google OAuth 2.0 Client ID dari Google Cloud Console
+  //     Biarkan string kosong '' jika belum setup Google OAuth
+  const GOOGLE_CLIENT_ID = '';
+
+  // [3] Halaman tujuan setelah login berhasil
+  const APP_URL = 'index.html';
+
+  // ── derived (jangan diubah) ──────────────────────────────────
+  const AUTH_SIGNIN = `${N8N_BASE_URL}/auth/signin`;
+  const AUTH_SIGNUP = `${N8N_BASE_URL}/auth/signup`;
+  const AUTH_FORGOT = `${N8N_BASE_URL}/auth/forgot-password`;
+  const AUTH_GOOGLE = `${N8N_BASE_URL}/auth/google`;
+
+  // ============================================================
+  // State
+  // ============================================================
+  let currentTab = 'signin';
+
+  // ============================================================
+  // Tab switcher
+  // ============================================================
+  function switchTab(tab) {
+    currentTab = tab;
+
+    // Reset semua panels
+    document.querySelectorAll('.form-panel, .success-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    clearAllErrors();
+
+    if (tab === 'signin') {
+      document.getElementById('panelSignin').classList.add('active');
+      document.getElementById('tabSignin').classList.add('active');
+      document.getElementById('cardTitle').textContent = 'Welcome back';
+      document.getElementById('cardSubtitle').textContent = 'Sign in to continue your English journey';
+      document.getElementById('googleLabel').textContent = 'Continue with Google';
+      document.querySelector('.oauth-group').style.display = '';
+      document.querySelector('.divider').style.display = '';
+
+    } else if (tab === 'signup') {
+      document.getElementById('panelSignup').classList.add('active');
+      document.getElementById('tabSignup').classList.add('active');
+      document.getElementById('cardTitle').textContent = 'Create account';
+      document.getElementById('cardSubtitle').textContent = 'Start your English learning journey today';
+      document.getElementById('googleLabel').textContent = 'Sign up with Google';
+      document.querySelector('.oauth-group').style.display = '';
+      document.querySelector('.divider').style.display = '';
+
+    } else if (tab === 'forgot') {
+      document.getElementById('panelForgot').classList.add('active');
+      document.getElementById('cardTitle').textContent = 'Reset password';
+      document.getElementById('cardSubtitle').textContent = 'Enter your email and we\'ll send a reset link';
+      document.querySelector('.oauth-group').style.display = 'none';
+      document.querySelector('.divider').style.display = 'none';
+
+    } else if (tab === 'success') {
+      document.getElementById('panelSuccess').classList.add('active');
+      document.getElementById('cardTitle').textContent = 'Email sent!';
+      document.getElementById('cardSubtitle').textContent = '';
+      document.querySelector('.oauth-group').style.display = 'none';
+      document.querySelector('.divider').style.display = 'none';
+    }
+  }
+
+  // ============================================================
+  // Forgot password shortcut
+  // ============================================================
+  function showForgotPassword() {
+    switchTab('forgot');
+    // Pre-fill email jika sudah diisi
+    const signinEmail = document.getElementById('signinEmail').value.trim();
+    if (signinEmail) {
+      document.getElementById('forgotEmail').value = signinEmail;
+    }
+  }
+
+  // ============================================================
+  // Helpers
+  // ============================================================
+  function setLoading(btnId, loading) {
+    const btn = document.getElementById(btnId);
+    btn.disabled = loading;
+    btn.classList.toggle('loading', loading);
+  }
+
+  function showFieldError(fieldId, msg) {
+    const el = document.getElementById(fieldId);
+    if (!el) return;
+    el.classList.add('visible');
+    el.querySelector('.field-error-text').textContent = msg;
+  }
+
+  function clearFieldError(fieldId) {
+    const el = document.getElementById(fieldId);
+    if (!el) return;
+    el.classList.remove('visible');
+  }
+
+  function clearAllErrors() {
+    document.querySelectorAll('.field-error').forEach(e => e.classList.remove('visible'));
+  }
+
+  let toastTimer = null;
+  function showToast(msg, isError = false, isSuccess = false) {
+    const el = document.getElementById('toast');
+    el.className = 'toast';
+    if (isError)   el.classList.add('error');
+    if (isSuccess) el.classList.add('success');
+
+    const icon = isError ? '✕' : isSuccess ? '✓' : 'ℹ';
+    el.innerHTML = `<span>${icon}</span><span>${msg}</span>`;
+    el.classList.add('show');
+
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+  }
+
+  function isValidEmail(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  }
+
+  // Simpan token ke sessionStorage (nantinya pakai cookie httpOnly setelah backend siap)
+  function saveSession(token, userId, userName, level) {
+    sessionStorage.setItem('speakup_token',   token   || '');
+    sessionStorage.setItem('speakup_user_id', userId  || '');
+    sessionStorage.setItem('speakup_name',    userName|| '');
+    sessionStorage.setItem('speakup_level',   level   || 'A1');
+  }
+
+  function redirectToApp() {
+    setTimeout(() => { window.location.href = APP_URL; }, 600);
+  }
+
+  // ============================================================
+  // Google OAuth
+  // ============================================================
+  function handleGoogleOAuth() {
+    if (!GOOGLE_CLIENT_ID) {
+      showToast('Google OAuth belum dikonfigurasi.', true);
+      return;
+    }
+    if (typeof google === 'undefined') {
+      showToast('Google Sign-In tidak tersedia. Pastikan koneksi internet aktif.', true);
+      return;
+    }
+
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: GOOGLE_CLIENT_ID,
+      scope: 'openid email profile',
+      callback: async (tokenResponse) => {
+        if (tokenResponse.error) {
+          showToast('Google login gagal: ' + tokenResponse.error, true);
+          return;
+        }
+        await handleGoogleToken(tokenResponse.access_token);
+      }
+    });
+    client.requestAccessToken();
+  }
+
+  async function handleGoogleToken(accessToken) {
+    const btn = document.getElementById('btnGoogle');
+    btn.disabled = true;
+    const originalContent = btn.innerHTML;
+    btn.innerHTML = `<div class="btn-spinner" style="display:block;width:16px;height:16px;border:2px solid rgba(255,255,255,0.2);border-top-color:var(--text);border-radius:50%;animation:spin 0.6s linear infinite;margin:0 auto;"></div>`;
+
+    try {
+      const res = await fetch(AUTH_GOOGLE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ access_token: accessToken })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Google authentication failed');
+      }
+
+      saveSession(data.token, data.user.id, data.user.name, data.user.level);
+      showToast(`Welcome, ${data.user.name}! 🎉`, false, true);
+      redirectToApp();
+
+    } catch (err) {
+      showToast(err.message || 'Google login gagal', true);
+      btn.disabled = false;
+      btn.innerHTML = originalContent;
+    }
+  }
+
+  // ============================================================
+  // Email Sign In
+  // ============================================================
+  async function handleEmailSignIn() {
+    clearAllErrors();
+    const email    = document.getElementById('signinEmail').value.trim();
+    const password = document.getElementById('signinPassword').value;
+
+    let valid = true;
+    if (!email) {
+      showFieldError('signinEmailError', 'Email is required'); valid = false;
+    } else if (!isValidEmail(email)) {
+      showFieldError('signinEmailError', 'Enter a valid email address'); valid = false;
+    }
+    if (!password) {
+      showFieldError('signinPasswordError', 'Password is required'); valid = false;
+    }
+    if (!valid) return;
+
+    setLoading('btnSignin', true);
+
+    try {
+      const res = await fetch(AUTH_SIGNIN, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Email atau password salah');
+      }
+
+      saveSession(data.token, data.user.id, data.user.name, data.user.level);
+      showToast(`Welcome back, ${data.user.name}! 🎉`, false, true);
+      redirectToApp();
+
+    } catch (err) {
+      showToast(err.message || 'Sign in gagal', true);
+    } finally {
+      setLoading('btnSignin', false);
+    }
+  }
+
+  // ============================================================
+  // Email Sign Up
+  // ============================================================
+  async function handleEmailSignUp() {
+    clearAllErrors();
+    const firstName = document.getElementById('signupFirst').value.trim();
+    const lastName  = document.getElementById('signupLast').value.trim();
+    const email     = document.getElementById('signupEmail').value.trim();
+    const password  = document.getElementById('signupPassword').value;
+
+    let valid = true;
+    if (!firstName) {
+      showFieldError('signupNameError', 'First name is required'); valid = false;
+    }
+    if (!isValidEmail(email)) {
+      showFieldError('signupEmailError', 'Enter a valid email address'); valid = false;
+    }
+    if (password.length < 8) {
+      showFieldError('signupPasswordError', 'Password must be at least 8 characters'); valid = false;
+    }
+    if (!valid) return;
+
+    setLoading('btnSignup', true);
+
+    try {
+      const res = await fetch(AUTH_SIGNUP, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:      `${firstName} ${lastName}`.trim(),
+          email,
+          password
+        })
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Sign up gagal');
+      }
+
+      saveSession(data.token, data.user.id, data.user.name, data.user.level || 'A1');
+      showToast(`Account created! Welcome, ${firstName}! 🎉`, false, true);
+      redirectToApp();
+
+    } catch (err) {
+      showToast(err.message || 'Sign up gagal', true);
+    } finally {
+      setLoading('btnSignup', false);
+    }
+  }
+
+  // ============================================================
+  // Forgot Password
+  // ============================================================
+  async function handleForgotPassword() {
+    clearAllErrors();
+    const email = document.getElementById('forgotEmail').value.trim();
+
+    if (!isValidEmail(email)) {
+      showFieldError('forgotEmailError', 'Enter a valid email address');
+      return;
+    }
+
+    setLoading('btnForgot', true);
+
+    try {
+      await fetch(AUTH_FORGOT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      // Selalu tampilkan success — security best practice
+      // n8n tidak bocorkan apakah email terdaftar atau tidak
+    } catch (err) {
+      // Network error pun tetap tampilkan success (hindari user enumeration)
+      console.warn('Forgot password request error (hidden for security):', err.message);
+    } finally {
+      setLoading('btnForgot', false);
+      document.getElementById('successDesc').textContent =
+        `If ${email} is registered, a reset link has been sent. Check your spam folder too.`;
+      switchTab('success');
+    }
+  }
+
+  // ============================================================
+  // Password toggle
+  // ============================================================
+  function togglePassword(inputId, btn) {
+    const input = document.getElementById(inputId);
+    const icon  = btn.querySelector('.material-symbols-outlined');
+    const isHidden = input.type === 'password';
+    input.type = isHidden ? 'text' : 'password';
+    icon.textContent = isHidden ? 'visibility_off' : 'visibility';
+  }
+
+  // ============================================================
+  // Enter key submit
+  // ============================================================
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if (currentTab === 'signin')  handleEmailSignIn();
+    if (currentTab === 'signup')  handleEmailSignUp();
+    if (currentTab === 'forgot')  handleForgotPassword();
+  });
+
+  // ============================================================
+  // Auto-redirect jika sudah login
+  // ============================================================
+  (function checkExistingSession() {
+    const userId = sessionStorage.getItem('speakup_user_id');
+    if (userId) {
+      window.location.href = APP_URL;
+    }
+  })();
+
+  // ============================================================
+  // Input error clear on type
+  // ============================================================
+  ['signinEmail','signinPassword','signupFirst','signupLast','signupEmail','signupPassword','forgotEmail']
+    .forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', () => {
+        const errorId = id.replace('signin','signin').replace('signup','signup').replace('forgot','forgot');
+        // Clear related errors
+        document.querySelectorAll('.field-error.visible').forEach(e => {
+          // Only clear errors in current visible panel
+          if (e.closest('.form-panel.active')) e.classList.remove('visible');
+        });
+      });
+    });
+</script>
+
+<!-- Google Identity Services — aktif otomatis jika GOOGLE_CLIENT_ID terisi -->
+<script>
+  if (typeof GOOGLE_CLIENT_ID !== 'undefined' && GOOGLE_CLIENT_ID) {
+    const s = document.createElement('script');
+    s.src = 'https://accounts.google.com/gsi/client';
+    s.async = true; s.defer = true;
+    document.head.appendChild(s);
+  }
+</script>
+
+<!--
+  ╔══════════════════════════════════════════════════════╗
+  ║          CHECKLIST SETUP — baca sebelum deploy       ║
+  ╠══════════════════════════════════════════════════════╣
+  ║ 1. N8N_BASE_URL  → sesuaikan di blok CONFIG atas    ║
+  ║ 2. GOOGLE_CLIENT_ID → isi jika pakai Google OAuth   ║
+  ║    └─ buat di console.cloud.google.com              ║
+  ║    └─ tambahkan origin domain di Authorized origins ║
+  ║ 3. APP_URL       → halaman setelah login berhasil   ║
+  ║                                                      ║
+  ║  Session storage keys yang disimpan:                 ║
+  ║    speakup_token    → JWT (7 hari)                  ║
+  ║    speakup_user_id  → UUID user                     ║
+  ║    speakup_name     → nama tampilan                 ║
+  ║    speakup_level    → CEFR level (A1–C2)            ║
+  ╚══════════════════════════════════════════════════════╝
+-->
+</body>
+</html>

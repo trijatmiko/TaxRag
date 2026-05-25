@@ -1,0 +1,1689 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Vocabulary Library - SpeakUp AI</title>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Syne:wght@400..800&display=swap"
+        rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+        rel="stylesheet" />
+    <script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-error": "#690005", "on-secondary-fixed-variant": "#4f319c", "surface-container-high": "#282a2f", "tertiary": "#45dfa4", "on-surface-variant": "#c2c6d6", "on-primary": "#002d6c", "on-background": "#e2e2e9", "outline-variant": "#424753", "on-tertiary-container": "#003120", "inverse-surface": "#e2e2e9", "surface-container-lowest": "#0c0e13", "tertiary-fixed": "#68fcbf", "status-warning": "#fbbf24", "surface": "#111318", "surface-bright": "#37393f", "on-tertiary-fixed-variant": "#005137", "on-tertiary": "#003825", "surface-container-low": "#1a1b21", "status-error": "#f87171", "tertiary-container": "#00a574", "primary": "#afc6ff", "secondary-container": "#4f319c", "secondary": "#cebdff", "surface-dim": "#111318", "error-container": "#93000a", "on-secondary": "#381385", "surface-elevated": "#1c2030", "text-muted": "#6b7290", "inverse-on-surface": "#2e3036", "primary-fixed-dim": "#afc6ff", "inverse-primary": "#0059c6", "surface-container": "#1e1f25", "surface-main": "#151820", "outline": "#8c909f", "surface-container-highest": "#33353a", "secondary-fixed-dim": "#cebdff", "error": "#ffb4ab", "on-secondary-container": "#bea8ff", "on-primary-fixed-variant": "#004398", "surface-variant": "#33353a", "on-secondary-fixed": "#21005e", "on-surface": "#e2e2e9", "tertiary-fixed-dim": "#45dfa4", "text-primary": "#e8eaf2", "on-primary-fixed": "#001a43", "primary-fixed": "#d9e2ff", "secondary-fixed": "#e8ddff", "background": "#111318", "on-error-container": "#ffdad6", "surface-tint": "#afc6ff", "border-subtle": "#252a3a", "on-tertiary-fixed": "#002114", "on-primary-container": "#00275f", "primary-container": "#528dff"
+                    },
+                    "borderRadius": { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                    "spacing": { "internal-gap": "8px", "gutter": "16px", "container-padding": "28px", "component-padding": "20px", "drawer-width": "340px", "section-gap": "20px", "sidebar-width": "280px" },
+                    "fontFamily": { "body-large": ["DM Sans"], "button-text": ["Syne"], "headline-modal-mobile": ["Syne"], "helper-text": ["DM Sans"], "display-brand": ["Syne"], "stat-value": ["Syne"], "body-chat": ["DM Sans"], "section-label": ["DM Sans"], "headline-modal": ["Syne"] },
+                    "fontSize": { "body-large": ["15px", { "lineHeight": "1.6", "fontWeight": "400" }], "button-text": ["15px", { "lineHeight": "1.0", "fontWeight": "700" }], "headline-modal-mobile": ["18px", { "lineHeight": "1.4", "fontWeight": "700" }], "helper-text": ["13px", { "lineHeight": "1.4", "fontWeight": "400" }], "display-brand": ["22px", { "lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "800" }], "stat-value": ["15px", { "lineHeight": "1.0", "fontWeight": "700" }], "body-chat": ["14px", { "lineHeight": "1.6", "fontWeight": "400" }], "section-label": ["11px", { "lineHeight": "1.0", "letterSpacing": "1.2px", "fontWeight": "600" }], "headline-modal": ["20px", { "lineHeight": "1.4", "fontWeight": "700" }] }
+                },
+            },
+        }
+    </script>
+    <style>
+        body {
+            background-color: #0d0f14;
+        }
+
+        .glass-card {
+            background: rgba(28, 32, 48, 0.4);
+            backdrop-filter: blur(8px);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle at var(--mouse-x, 50%) var(--mouse-y, 50%), rgba(175, 198, 255, 0.05) 0%, transparent 80%);
+            pointer-events: none;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: #252a3a;
+            border-radius: 10px;
+        }
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        @keyframes shimmer {
+            0% {
+                background-position: -1000px 0;
+            }
+
+            100% {
+                background-position: 1000px 0;
+            }
+        }
+
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0.04) 25%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.04) 75%);
+            background-size: 1000px 100%;
+            animation: shimmer 1.8s infinite linear;
+            border-radius: 6px;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+            padding: 60px 20px;
+            grid-column: 1 / -1;
+            color: #6b7290;
+        }
+
+        @keyframes countUp {
+            from {
+                opacity: 0;
+                transform: translateY(4px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .stat-animate {
+            animation: countUp 0.4s ease forwards;
+        }
+    </style>
+</head>
+
+<body class="text-on-background font-body-large overflow-hidden">
+
+    <!-- SideNavBar -->
+    <aside
+        class="w-sidebar-width h-screen fixed left-0 top-0 border-r border-border-subtle bg-surface flex flex-col py-container-padding px-gutter z-50">
+        <div class="mb-10">
+            <h1 class="font-display-brand text-display-brand text-primary tracking-tighter">SpeakUp AI</h1>
+            <p class="font-section-label text-section-label text-on-surface-variant mt-1">Fluent Co-pilot</p>
+        </div>
+        <nav class="flex-1 space-y-2">
+            <a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container transition-colors duration-200 rounded-lg group"
+                href="#">
+                <span class="material-symbols-outlined">person</span>
+                <span class="font-section-label text-section-label">Profile</span>
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 text-primary font-bold bg-secondary-container/20 rounded-lg scale-95 transition-transform group"
+                href="#">
+                <span class="material-symbols-outlined" style="font-variation-settings:'FILL' 1;">exercise</span>
+                <span class="font-section-label text-section-label">Vocabulary Lab</span>
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container transition-colors duration-200 rounded-lg group"
+                href="#">
+                <span class="material-symbols-outlined">auto_fix_high</span>
+                <span class="font-section-label text-section-label">Corrections</span>
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container transition-colors duration-200 rounded-lg group"
+                href="#">
+                <span class="material-symbols-outlined">leaderboard</span>
+                <span class="font-section-label text-section-label">Progress</span>
+            </a>
+            <a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container transition-colors duration-200 rounded-lg group"
+                href="#">
+                <span class="material-symbols-outlined">settings</span>
+                <span class="font-section-label text-section-label">Settings</span>
+            </a>
+        </nav>
+        <div class="mt-auto pt-6 border-t border-border-subtle">
+            <button
+                class="w-full font-button-text text-button-text py-4 rounded-xl flex items-center justify-center gap-2 mb-6 hover:opacity-90 transition-opacity bg-white text-black">
+                <span>Start Lesson</span>
+            </button>
+            <a class="flex items-center gap-3 px-4 py-3 text-on-surface-variant hover:bg-surface-container transition-colors duration-200 rounded-lg"
+                href="#">
+                <span class="material-symbols-outlined">logout</span>
+                <span class="font-section-label text-section-label">Logout</span>
+            </a>
+        </div>
+    </aside>
+
+    <!-- Main Wrapper -->
+    <div class="ml-sidebar-width h-screen flex flex-col">
+
+        <!-- TopAppBar -->
+        <header
+            class="flex items-center justify-between px-container-padding w-full sticky top-0 bg-surface/80 backdrop-blur-xl border-b border-border-subtle z-40 h-16">
+            <div class="flex flex-col">
+                <span class="font-headline-modal text-headline-modal text-primary">SpeakUp</span>
+                <span class="font-body-large text-on-surface-variant -mt-1 text-[13px]">Language Mastery
+                    Dashboard</span>
+            </div>
+            <div class="flex items-center gap-6">
+                <div class="relative w-64 hidden lg:block">
+                    <span
+                        class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[18px]">search</span>
+                    <input id="searchInput"
+                        class="w-full bg-surface-container-low border border-border-subtle rounded-full py-1.5 pl-10 pr-4 text-[13px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none transition-all"
+                        placeholder="Search vocabulary..." type="text" />
+                </div>
+                <!-- Retry button — tampil saat error -->
+                <button id="retryBtn" onclick="retryFetch()"
+                    class="hidden items-center gap-1 text-status-warning hover:text-on-surface transition-colors">
+                    <span class="material-symbols-outlined text-[18px]">refresh</span>
+                    <span class="font-section-label text-[10px]">Retry</span>
+                </button>
+                <button class="text-on-surface-variant hover:text-primary transition-opacity">
+                    <span class="material-symbols-outlined">notifications</span>
+                </button>
+                <div class="flex items-center gap-3 pl-6 border-l border-border-subtle">
+                    <div class="text-right">
+                        <p class="font-button-text text-button-text text-on-surface" id="userName">Loading...</p>
+                        <p class="font-helper-text text-helper-text text-text-muted" id="userLevel">—</p>
+                    </div>
+                    <img alt="User profile" id="userAvatar"
+                        class="w-10 h-10 rounded-full border-2 border-primary object-cover bg-surface-container"
+                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuCzYA1w0eX1ojfvHKpEUggetjGV2jfRdEPw5O-GLo_nMxdKCv2W6-PFnUnDOjdQgmKDyy9Hqaz_lIDpuBJ1Xv671RVilK-jBUKm-qZU9EwmmNeVWF7gOHaDOLJx_wsn9Xxo1w-NPLv7n1Yao5vhExyCuwx53Yzjrj-2jLg2SzoOV62OYE-77yXqIcFpfcJx7vFhA0FHuuapqEUlQyelSpUZJUL9PkjZpSsAHHwYZjnTJdIAkL2DlQx-JmamVwa4zu4-p8997WNPNOK7"
+                        onerror="this.style.display='none'" />
+                </div>
+            </div>
+        </header>
+
+        <!-- Error Banner -->
+        <div class="hidden bg-error-container/80 text-on-error-container font-helper-text text-center py-2 px-4 text-xs border-b border-error/20"
+            id="errorBanner"></div>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto custom-scrollbar p-container-padding">
+            <div class="max-w-7xl mx-auto space-y-section-gap">
+
+                <!-- Page Header -->
+                <section class="flex flex-col md:flex-row md:items-end justify-between gap-gutter">
+                    <div>
+                        <h2 class="font-headline-modal text-3xl text-on-surface tracking-tight">Vocabulary Library</h2>
+                        <p class="font-body-large text-on-surface-variant mt-2">
+                            Manage and review
+                            <span id="totalWordCount"
+                                class="text-primary font-bold skeleton inline-block w-16 h-4 align-middle">&nbsp;</span>
+                            words in your collection
+                        </p>
+                    </div>
+                    <div class="flex gap-4">
+                        <button onclick="exportVocab()"
+                            class="flex items-center gap-2 px-5 py-2.5 glass-card rounded-lg border border-border-subtle text-on-surface-variant hover:text-on-surface transition-all">
+                            <span class="material-symbols-outlined text-[20px]">cloud_download</span>
+                            <span class="font-button-text text-button-text">Export</span>
+                        </button>
+                        <button onclick="openImportModal()"
+                            class="flex items-center gap-2 px-5 py-2.5 glass-card rounded-lg border border-secondary/40 text-secondary hover:text-on-surface hover:border-secondary transition-all">
+                            <span class="material-symbols-outlined text-[20px]">upload_file</span>
+                            <span class="font-button-text text-button-text">Import ANKI</span>
+                        </button>
+                        <button onclick="openAddWordModal()"
+                            class="flex items-center gap-2 px-5 py-2.5 bg-primary text-on-primary rounded-lg font-bold hover:opacity-90 transition-all">
+                            <span class="material-symbols-outlined text-[20px]">add</span>
+                            <span class="font-button-text text-button-text">New Word</span>
+                        </button>
+                    </div>
+                </section>
+
+                <!-- Stats Bar — data dari webhook: { stats.total_words, total_mastered, total_learning } -->
+                <section class="grid grid-cols-3 gap-4">
+                    <div class="glass-card rounded-xl border border-border-subtle px-5 py-4 flex items-center gap-3">
+                        <span class="material-symbols-outlined text-primary text-[28px]"
+                            style="font-variation-settings:'FILL' 1;">library_books</span>
+                        <div>
+                            <p class="font-stat-value text-stat-value text-on-surface" id="statTotal"><span
+                                    class="skeleton inline-block w-8 h-4">&nbsp;</span></p>
+                            <p class="font-section-label text-[10px] text-text-muted mt-0.5">TOTAL WORDS</p>
+                        </div>
+                    </div>
+                    <div class="glass-card rounded-xl border border-border-subtle px-5 py-4 flex items-center gap-3">
+                        <span class="material-symbols-outlined text-tertiary text-[28px]"
+                            style="font-variation-settings:'FILL' 1;">check_circle</span>
+                        <div>
+                            <p class="font-stat-value text-stat-value text-on-surface" id="statMastered"><span
+                                    class="skeleton inline-block w-8 h-4">&nbsp;</span></p>
+                            <p class="font-section-label text-[10px] text-text-muted mt-0.5">MASTERED</p>
+                        </div>
+                    </div>
+                    <div class="glass-card rounded-xl border border-border-subtle px-5 py-4 flex items-center gap-3">
+                        <span class="material-symbols-outlined text-secondary text-[28px]"
+                            style="font-variation-settings:'FILL' 1;">school</span>
+                        <div>
+                            <p class="font-stat-value text-stat-value text-on-surface" id="statLearning"><span
+                                    class="skeleton inline-block w-8 h-4">&nbsp;</span></p>
+                            <p class="font-section-label text-[10px] text-text-muted mt-0.5">LEARNING</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Filter & Sort Row -->
+                <section class="flex flex-col lg:flex-row gap-6 lg:items-center justify-between">
+                    <div class="flex gap-2 overflow-x-auto pb-1 scrollbar-hide" id="filter-container">
+                        <button
+                            class="px-5 py-2 rounded-full font-section-label text-section-label transition-all bg-primary text-on-primary border border-primary"
+                            data-filter="all">ALL</button>
+                        <button
+                            class="px-5 py-2 rounded-full font-section-label text-section-label transition-all glass-card border border-border-subtle text-on-surface-variant hover:text-on-surface"
+                            data-filter="mastered">MASTERED</button>
+                        <button
+                            class="px-5 py-2 rounded-full font-section-label text-section-label transition-all glass-card border border-border-subtle text-on-surface-variant hover:text-on-surface"
+                            data-filter="learning">LEARNING</button>
+                        <button
+                            class="px-5 py-2 rounded-full font-section-label text-section-label transition-all glass-card border border-border-subtle text-on-surface-variant hover:text-on-surface"
+                            data-filter="difficult">DIFFICULT</button>
+                    </div>
+                    <div class="flex gap-4 items-center">
+                        <div class="relative min-w-[180px]">
+                            <select id="sortSelect"
+                                class="appearance-none w-full bg-surface-container-low border border-border-subtle rounded-lg py-2 pl-4 pr-10 font-section-label text-section-label text-on-surface focus:ring-1 focus:ring-primary/50 outline-none cursor-pointer">
+                                <option value="recent">Sort: Recent</option>
+                                <option value="alpha">Sort: Alphabetical</option>
+                                <option value="level">Sort: Level</option>
+                            </select>
+                            <span
+                                class="material-symbols-outlined absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-on-surface-variant">expand_more</span>
+                        </div>
+                        <div class="flex glass-card border border-border-subtle rounded-lg p-1">
+                            <button id="gridViewBtn" onclick="setViewMode('grid')"
+                                class="p-1.5 rounded-md bg-secondary-container/20 text-primary">
+                                <span class="material-symbols-outlined text-[20px]">grid_view</span>
+                            </button>
+                            <button id="listViewBtn" onclick="setViewMode('list')"
+                                class="p-1.5 rounded-md text-on-surface-variant hover:text-on-surface transition-colors">
+                                <span class="material-symbols-outlined text-[20px]">view_list</span>
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Vocabulary Grid -->
+                <section id="vocabulary-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                    <div
+                        class="skeleton-card glass-card p-6 rounded-xl border border-border-subtle flex flex-col gap-4">
+                        <div class="flex justify-between">
+                            <div class="skeleton h-4 w-16"></div>
+                            <div class="skeleton h-4 w-8"></div>
+                        </div>
+                        <div class="skeleton h-6 w-3/4"></div>
+                        <div class="skeleton h-3 w-1/2"></div>
+                        <div class="skeleton h-12 w-full"></div>
+                        <div class="skeleton h-8 w-24 mt-auto"></div>
+                    </div>
+                    <div
+                        class="skeleton-card glass-card p-6 rounded-xl border border-border-subtle flex flex-col gap-4">
+                        <div class="flex justify-between">
+                            <div class="skeleton h-4 w-16"></div>
+                            <div class="skeleton h-4 w-8"></div>
+                        </div>
+                        <div class="skeleton h-6 w-2/3"></div>
+                        <div class="skeleton h-3 w-1/2"></div>
+                        <div class="skeleton h-12 w-full"></div>
+                        <div class="skeleton h-8 w-24 mt-auto"></div>
+                    </div>
+                    <div
+                        class="skeleton-card glass-card p-6 rounded-xl border border-border-subtle flex flex-col gap-4">
+                        <div class="flex justify-between">
+                            <div class="skeleton h-4 w-16"></div>
+                            <div class="skeleton h-4 w-8"></div>
+                        </div>
+                        <div class="skeleton h-6 w-4/5"></div>
+                        <div class="skeleton h-3 w-1/2"></div>
+                        <div class="skeleton h-12 w-full"></div>
+                        <div class="skeleton h-8 w-24 mt-auto"></div>
+                    </div>
+                </section>
+
+                <!-- Pagination -->
+                <nav id="paginationNav" class="flex items-center justify-center gap-2 py-10 hidden"></nav>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- ==================== SCRIPT ==================== -->
+    <script>
+        // -------------------------------------------------------
+        // CONFIG — sesuaikan URL dan USER_ID
+        // -------------------------------------------------------
+
+        const WEBHOOK_BASE = 'http://localhost:5678/webhook';
+        const VOCAB_LIST_URL = WEBHOOK_BASE + '/vocabulary/list';
+        const VOCAB_MASTER_URL = WEBHOOK_BASE + '/vocabulary/master';
+        const VOCAB_ADD_URL = WEBHOOK_BASE + '/vocabulary/add';
+        const VOCAB_EDIT_URL = WEBHOOK_BASE + '/vocabulary/edit';
+        const VOCAB_DELETE_URL = WEBHOOK_BASE + '/vocabulary/delete';
+        const CURRENT_USER_ID = '86b04bfc-e6b7-4265-bcc9-3ef949eba7c3';
+        const PAGE_SIZE = 12;
+        const TIMEOUT_MS = 30000;
+
+        // -------------------------------------------------------
+        // State
+        // -------------------------------------------------------
+        let allVocabs = [];
+        let filteredVocabs = [];
+        let currentPage = 1;
+        let currentFilter = 'all';
+        let currentSort = 'recent';
+        let currentView = 'grid';
+        let searchQuery = '';
+        let statsCache = null;
+
+        // -------------------------------------------------------
+        // Fetch dengan timeout
+        // -------------------------------------------------------
+        function fetchTimeout(url, opts, ms) {
+            const ctrl = new AbortController();
+            const t = setTimeout(function () { ctrl.abort(); }, ms || TIMEOUT_MS);
+            return fetch(url, Object.assign({}, opts, { signal: ctrl.signal }))
+                .then(function (r) { clearTimeout(t); return r; })
+                .catch(function (e) { clearTimeout(t); throw e; });
+        }
+
+        // -------------------------------------------------------
+        // Error banner & retry
+        // -------------------------------------------------------
+        function showError(msg) {
+            var b = document.getElementById('errorBanner');
+            if (b) { b.textContent = '\u26a0 ' + msg; b.classList.remove('hidden'); }
+            var r = document.getElementById('retryBtn');
+            if (r) { r.classList.remove('hidden'); r.classList.add('flex'); }
+        }
+        function hideError() {
+            var b = document.getElementById('errorBanner');
+            if (b) b.classList.add('hidden');
+            var r = document.getElementById('retryBtn');
+            if (r) { r.classList.add('hidden'); r.classList.remove('flex'); }
+        }
+        function retryFetch() { hideError(); fetchVocabData(); }
+
+        // -------------------------------------------------------
+        // Glow mouse effect
+        // -------------------------------------------------------
+        function attachGlowEffects() {
+            document.querySelectorAll('.glass-card').forEach(function (card) {
+                card.addEventListener('mousemove', function (e) {
+                    var rect = card.getBoundingClientRect();
+                    card.style.setProperty('--mouse-x', (e.clientX - rect.left) + 'px');
+                    card.style.setProperty('--mouse-y', (e.clientY - rect.top) + 'px');
+                });
+            });
+        }
+
+        // -------------------------------------------------------
+        // Helpers
+        // -------------------------------------------------------
+        function levelBadge(level) {
+            var l = (level || '').toUpperCase();
+            var map = {
+                A1: 'border-tertiary/40 text-tertiary', A2: 'border-tertiary/40 text-tertiary',
+                B1: 'border-secondary/40 text-secondary', B2: 'border-secondary/40 text-secondary',
+                C1: 'border-primary/40 text-primary', C2: 'border-error/40 text-error'
+            };
+            var cls = map[l] || 'border-outline text-on-surface-variant';
+            return '<div class="px-2 py-0.5 rounded border ' + cls + ' font-section-label text-[10px] font-bold">' + (l || '—') + '</div>';
+        }
+
+        function resolveStatus(v) {
+            if (v.is_mastered === true || v.is_mastered === 'true') return 'mastered';
+            if (v.is_difficult === true || v.is_difficult === 'true') return 'difficult';
+            return 'learning';
+        }
+
+        function formatDate(iso) {
+            if (!iso) return null;
+            try { return new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }); }
+            catch (e) { return null; }
+        }
+
+        // -------------------------------------------------------
+        // Render: grid card
+        // -------------------------------------------------------
+        function renderVocabCard(v) {
+            var status = resolveStatus(v);
+            var word = v.vocab_word || v.word || '—';
+            var pos = (v.part_of_speech || v.type || 'WORD').toUpperCase();
+            var level = v.level || v.vocab_level || '';
+            var def = v.definition || v.meaning || '';
+            var phon = v.phonetic || '';
+            var id = v.id || '';
+
+            var actionHtml = status === 'mastered'
+                ? '<div class="flex items-center gap-2 text-tertiary"><span class="material-symbols-outlined text-[18px]" style="font-variation-settings:\'FILL\' 1;">check_circle</span><span class="font-section-label text-[11px]">Perfect Recall</span></div>'
+                : '<button onclick="markMastered(\'' + id + '\')" class="bg-primary text-on-primary font-button-text text-[11px] px-4 py-1.5 rounded hover:opacity-90 transition-opacity">PRACTICE</button>';
+
+            return '<div class="glass-card p-6 rounded-xl border border-border-subtle flex flex-col group transition-all duration-300 hover:scale-[1.01]" data-status="' + status + '" data-id="' + id + '" data-word="' + word.toLowerCase() + '">'
+                + '<div class="flex justify-between items-start mb-4">'
+                + '<span class="font-section-label text-[10px] text-on-surface-variant bg-surface-container/50 px-2 py-0.5 rounded">' + pos + '</span>'
+                + levelBadge(level)
+                + '</div>'
+                + '<h3 class="font-headline-modal text-xl text-on-surface mb-1">' + word + '</h3>'
+                + (phon ? '<p class="font-helper-text text-on-surface-variant text-sm mb-4 italic">' + phon + '</p>' : '<div class="mb-4"></div>')
+                + '<p class="font-body-large text-on-surface-variant text-[14px] mb-6 flex-1 leading-relaxed">' + (def || '<span class="italic text-text-muted">No definition available.</span>') + '</p>'
+                + '<div class="pt-4 border-t border-border-subtle flex items-center justify-between">'
+                + actionHtml
+                + '<div class="flex items-center gap-0.5">'
+                + '<button onclick="openEditModal(\'' + id + '\')" title="Edit" class="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-colors"><span class="material-symbols-outlined text-[17px]">edit</span></button>'
+                + '<button onclick="confirmDelete(\'' + id + '\', \'' + word + '\')" title="Delete" class="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"><span class="material-symbols-outlined text-[17px]">delete</span></button>'
+                + '<button onclick="openDetailModal(\'' + id + '\')" title="Detail" class="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"><span class="material-symbols-outlined text-[17px]">info</span></button>'
+                + '</div>'
+                + '</div></div>';
+        }
+
+        // -------------------------------------------------------
+        // Render: list row
+        // -------------------------------------------------------
+        function renderVocabRow(v) {
+            var status = resolveStatus(v);
+            var word = v.vocab_word || v.word || '—';
+            var pos = (v.part_of_speech || v.type || 'WORD').toUpperCase();
+            var level = v.level || v.vocab_level || '';
+            var def = v.definition || v.meaning || '';
+            var id = v.id || '';
+
+            var statusHtml = status === 'mastered'
+                ? '<div class="flex items-center gap-1 text-tertiary"><span class="material-symbols-outlined text-[16px]" style="font-variation-settings:\'FILL\' 1;">check_circle</span><span class="font-section-label text-[10px]">Mastered</span></div>'
+                : status === 'difficult'
+                    ? '<span class="font-section-label text-[10px] text-error">Difficult</span>'
+                    : '<button onclick="markMastered(\'' + id + '\')" class="bg-primary text-on-primary font-button-text text-[10px] px-3 py-1 rounded hover:opacity-90 transition-opacity">PRACTICE</button>';
+
+            return '<div class="glass-card px-5 py-4 rounded-xl border border-border-subtle flex items-center gap-4 transition-all duration-200 hover:bg-surface-container/40" data-status="' + status + '" data-id="' + id + '" data-word="' + word.toLowerCase() + '">'
+                + '<div class="flex items-center gap-3 flex-shrink-0 w-32"><span class="font-section-label text-[9px] text-on-surface-variant bg-surface-container/50 px-2 py-0.5 rounded">' + pos + '</span>' + levelBadge(level) + '</div>'
+                + '<div class="flex-1 min-w-0"><span class="font-headline-modal text-base text-on-surface">' + word + '</span><p class="font-helper-text text-text-muted text-xs mt-0.5 truncate">' + def + '</p></div>'
+                + '<div class="flex-shrink-0">' + statusHtml + '</div>'
+                + '<div class="flex items-center gap-0.5 flex-shrink-0">'
+                + '<button onclick="openEditModal(\'' + id + '\')" title="Edit" class="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-secondary hover:bg-secondary/10 transition-colors"><span class="material-symbols-outlined text-[17px]">edit</span></button>'
+                + '<button onclick="confirmDelete(\'' + id + '\', \'' + word + '\')" title="Delete" class="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-error hover:bg-error/10 transition-colors"><span class="material-symbols-outlined text-[17px]">delete</span></button>'
+                + '<button onclick="openDetailModal(\'' + id + '\')" title="Detail" class="w-8 h-8 flex items-center justify-center rounded-lg text-on-surface-variant hover:text-primary hover:bg-primary/10 transition-colors"><span class="material-symbols-outlined text-[17px]">info</span></button>'
+                + '</div>'
+                + '</div>';
+        }
+
+        // -------------------------------------------------------
+        // Filter + Sort + Search
+        // -------------------------------------------------------
+        function applyFilterSort() {
+            var data = allVocabs.slice();
+            if (searchQuery) {
+                data = data.filter(function (v) {
+                    return (v.vocab_word || v.word || '').toLowerCase().indexOf(searchQuery) !== -1
+                        || (v.definition || v.meaning || '').toLowerCase().indexOf(searchQuery) !== -1;
+                });
+            }
+            if (currentFilter !== 'all') {
+                data = data.filter(function (v) { return resolveStatus(v) === currentFilter; });
+            }
+            if (currentSort === 'alpha') {
+                data.sort(function (a, b) { return (a.vocab_word || a.word || '').localeCompare(b.vocab_word || b.word || ''); });
+            } else if (currentSort === 'level') {
+                var ord = { A1: 1, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6 };
+                data.sort(function (a, b) { return (ord[(a.level || a.vocab_level || '').toUpperCase()] || 9) - (ord[(b.level || b.vocab_level || '').toUpperCase()] || 9); });
+            } else {
+                // recent — sort by learned_at / created_at DESC (webhook sudah urut, ini fallback)
+                data.sort(function (a, b) { return new Date(b.learned_at || b.created_at || 0) - new Date(a.learned_at || a.created_at || 0); });
+            }
+            filteredVocabs = data;
+            currentPage = 1;
+        }
+
+        // -------------------------------------------------------
+        // Render page
+        // -------------------------------------------------------
+        function renderPage() {
+            var grid = document.getElementById('vocabulary-grid');
+            var pagNav = document.getElementById('paginationNav');
+            var total = filteredVocabs.length;
+            var start = (currentPage - 1) * PAGE_SIZE;
+            var page = filteredVocabs.slice(start, start + PAGE_SIZE);
+
+            grid.className = currentView === 'list' ? 'flex flex-col gap-3' : 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8';
+
+            if (page.length === 0) {
+                grid.innerHTML = '<div class="empty-state"><span class="material-symbols-outlined text-[48px]">search_off</span><p class="font-headline-modal text-base">No vocabularies found</p><p class="font-helper-text text-sm">Try adjusting your filter or search query.</p></div>';
+                pagNav.classList.add('hidden');
+                return;
+            }
+            grid.innerHTML = page.map(function (v) { return currentView === 'list' ? renderVocabRow(v) : renderVocabCard(v); }).join('');
+            attachGlowEffects();
+            renderPagination(total);
+        }
+
+        // -------------------------------------------------------
+        // Pagination
+        // -------------------------------------------------------
+        function renderPagination(total) {
+            var pagNav = document.getElementById('paginationNav');
+            var tp = Math.ceil(total / PAGE_SIZE);
+            if (tp <= 1) { pagNav.classList.add('hidden'); return; }
+            pagNav.classList.remove('hidden');
+            var base = 'w-10 h-10 flex items-center justify-center rounded-lg font-section-label text-section-label transition-all';
+            var act = base + ' bg-primary text-on-primary';
+            var inac = base + ' glass-card border border-border-subtle text-on-surface-variant hover:text-primary';
+            var html = '<button class="' + inac + '" onclick="goPage(' + (currentPage - 1) + ')"' + (currentPage === 1 ? ' disabled style="opacity:.4;pointer-events:none"' : '') + '><span class="material-symbols-outlined">chevron_left</span></button>';
+            var pages = [];
+            for (var i = 1; i <= tp; i++) {
+                if (i === 1 || i === tp || (i >= currentPage - 1 && i <= currentPage + 1)) pages.push(i);
+                else if (pages[pages.length - 1] !== '...') pages.push('...');
+            }
+            pages.forEach(function (p) {
+                if (p === '...') html += '<span class="px-2 text-text-muted">...</span>';
+                else html += '<button class="' + (p === currentPage ? act : inac) + '" onclick="goPage(' + p + ')">' + p + '</button>';
+            });
+            html += '<button class="' + inac + '" onclick="goPage(' + (currentPage + 1) + ')"' + (currentPage === tp ? ' disabled style="opacity:.4;pointer-events:none"' : '') + '><span class="material-symbols-outlined">chevron_right</span></button>';
+            pagNav.innerHTML = html;
+        }
+
+        function goPage(n) {
+            var tp = Math.ceil(filteredVocabs.length / PAGE_SIZE);
+            if (n < 1 || n > tp) return;
+            currentPage = n;
+            renderPage();
+            document.querySelector('main').scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // -------------------------------------------------------
+        // View mode
+        // -------------------------------------------------------
+        function setViewMode(mode) {
+            currentView = mode;
+            var g = document.getElementById('gridViewBtn');
+            var l = document.getElementById('listViewBtn');
+            var on = 'p-1.5 rounded-md bg-secondary-container/20 text-primary';
+            var off = 'p-1.5 rounded-md text-on-surface-variant hover:text-on-surface transition-colors';
+            g.className = mode === 'grid' ? on : off;
+            l.className = mode === 'list' ? on : off;
+            renderPage();
+        }
+
+        // -------------------------------------------------------
+        // Mark mastered — optimistic + rollback on error
+        // FIX: body field sesuai webhook: vocabulary_id (bukan vocab_id)
+        // -------------------------------------------------------
+        function markMastered(id) {
+            if (!id) return;
+            var vocab = allVocabs.filter(function (v) { return v.id === id; })[0];
+            if (!vocab) return;
+            vocab.is_mastered = true;
+            applyFilterSort();
+            renderPage();
+            updateHeader();
+
+            fetchTimeout(VOCAB_MASTER_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: CURRENT_USER_ID, vocabulary_id: id })
+            }).then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+            }).catch(function (err) {
+                console.warn('markMastered error:', err);
+                vocab.is_mastered = false; // rollback
+                applyFilterSort();
+                renderPage();
+                updateHeader();
+                showError('Gagal menyimpan status mastered. Silakan coba lagi.');
+            });
+        }
+
+        // -------------------------------------------------------
+        // Update header count
+        // -------------------------------------------------------
+        function updateHeader() {
+            var el = document.getElementById('totalWordCount');
+            if (el) {
+                el.textContent = allVocabs.length + ' words';
+                el.classList.remove('skeleton', 'w-16', 'h-4');
+            }
+        }
+
+        // -------------------------------------------------------
+        // Update stats bar — dari webhook: { stats.total_words, total_mastered, total_learning }
+        // -------------------------------------------------------
+        function updateStatsBar(stats) {
+            if (!stats) return;
+            var t = document.getElementById('statTotal');
+            var m = document.getElementById('statMastered');
+            var l = document.getElementById('statLearning');
+            if (t) t.innerHTML = '<span class="stat-animate">' + (stats.total_words != null ? stats.total_words : allVocabs.length) + '</span>';
+            if (m) m.innerHTML = '<span class="stat-animate">' + (stats.total_mastered != null ? stats.total_mastered : 0) + '</span>';
+            if (l) l.innerHTML = '<span class="stat-animate">' + (stats.total_learning != null ? stats.total_learning : 0) + '</span>';
+        }
+
+        // -------------------------------------------------------
+        // Update user info — dari webhook: { user.name, user.level, user.avatar_url }
+        // FIX: graceful fallback jika avatar_url null
+        // -------------------------------------------------------
+        function updateUserInfo(user) {
+            if (!user) return;
+            var n = document.getElementById('userName');
+            var l = document.getElementById('userLevel');
+            var a = document.getElementById('userAvatar');
+            if (n) n.textContent = user.name || 'Learner';
+            if (l) l.textContent = user.level || '—';
+            if (a && user.avatar_url) a.src = user.avatar_url;
+        }
+
+        // -------------------------------------------------------
+        // Detail Modal — tambah session_topic & learned_at dari webhook
+        // -------------------------------------------------------
+        function openDetailModal(id) {
+            var v = allVocabs.filter(function (x) { return x.id === id; })[0];
+            if (!v) return;
+            var word = v.vocab_word || v.word || '—';
+            var def = v.definition || v.meaning || '';
+            var pos = (v.part_of_speech || v.type || '').toUpperCase();
+            var level = v.level || v.vocab_level || '';
+            var topic = v.session_topic || null;
+            var learned = formatDate(v.learned_at);
+            var status = resolveStatus(v);
+            var phonetic = v.phonetic || v.pronunciation || '';
+            var meaning = v.meaning_id || v.indonesian || '';
+
+            var modal = document.getElementById('detailModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.getElementById('detailWord').textContent = word;
+            document.getElementById('detailPos').textContent = pos;
+            document.getElementById('detailLevel').textContent = level;
+            document.getElementById('detailDef').textContent = def || 'No definition.';
+
+            // Pronunciation
+            var phonEl = document.getElementById('detailPhonetic');
+            if (phonetic) { phonEl.textContent = phonetic; phonEl.classList.remove('hidden'); }
+            else { phonEl.classList.add('hidden'); }
+
+            // Indonesian meaning
+            var meaningBlock = document.getElementById('detailMeaningBlock');
+            var meaningEl = document.getElementById('detailMeaning');
+            if (meaning) { meaningEl.textContent = meaning; meaningBlock.classList.remove('hidden'); }
+            else { meaningBlock.classList.add('hidden'); }
+
+            // Metadata dari webhook
+            var meta = document.getElementById('detailMeta');
+            var html = '';
+            if (learned) html += '<div class="flex items-center gap-2 text-text-muted text-xs"><span class="material-symbols-outlined text-[14px]">calendar_today</span><span>Learned: ' + learned + '</span></div>';
+            if (topic) html += '<div class="flex items-center gap-2 text-text-muted text-xs mt-1"><span class="material-symbols-outlined text-[14px]">topic</span><span>Session: ' + topic + '</span></div>';
+            if (status === 'mastered') html += '<div class="flex items-center gap-2 text-tertiary text-xs mt-1"><span class="material-symbols-outlined text-[14px]" style="font-variation-settings:\'FILL\' 1;">check_circle</span><span>Mastered</span></div>';
+            if (status === 'difficult') html += '<div class="flex items-center gap-2 text-error text-xs mt-1"><span class="material-symbols-outlined text-[14px]">warning</span><span>Marked as difficult</span></div>';
+            if (meta) meta.innerHTML = html;
+        }
+        function closeDetailModal() {
+            var m = document.getElementById('detailModal');
+            m.classList.add('hidden'); m.classList.remove('flex');
+        }
+
+        // -------------------------------------------------------
+        // Add Word Modal
+        // -------------------------------------------------------
+        function openAddWordModal() {
+            var m = document.getElementById('addWordModal');
+            m.classList.remove('hidden'); m.classList.add('flex');
+            setTimeout(function () { document.getElementById('newWord').focus(); }, 100);
+        }
+        function closeAddWordModal() {
+            var m = document.getElementById('addWordModal');
+            m.classList.add('hidden'); m.classList.remove('flex');
+        }
+
+        function submitNewWord() {
+            var word = document.getElementById('newWord').value.trim();
+            var pos = document.getElementById('newPos').value;
+            var level = document.getElementById('newLevel').value;
+            var def = document.getElementById('newDef').value.trim();
+            var pron = document.getElementById('newPronunciation').value.trim();
+            var mean = document.getElementById('newMeaningId').value.trim();
+            if (!word) { document.getElementById('newWord').focus(); return; }
+
+            var btn = document.getElementById('saveWordBtn');
+            btn.disabled = true;
+            btn.textContent = 'Saving...';
+
+            fetchTimeout(VOCAB_ADD_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: CURRENT_USER_ID,
+                    vocab_word: word,
+                    part_of_speech: pos,
+                    level: level,
+                    definition: def,
+                    pronunciation: pron,
+                    meaning_id: mean
+                })
+            }).then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            }).then(function (data) {
+                var entry = Array.isArray(data) ? data[0] : data;
+                if (!entry || !entry.id) throw new Error('Response tidak valid dari server');
+
+                allVocabs.unshift(entry);
+                if (statsCache) {
+                    statsCache.total_words = (statsCache.total_words || 0) + 1;
+                    statsCache.total_learning = (statsCache.total_learning || 0) + 1;
+                    updateStatsBar(statsCache);
+                }
+                applyFilterSort();
+                renderPage();
+                updateHeader();
+                closeAddWordModal();
+                // Clear all fields
+                ['newWord', 'newDef', 'newPronunciation', 'newMeaningId'].forEach(function (id) {
+                    document.getElementById(id).value = '';
+                });
+            }).catch(function (err) {
+                console.error('submitNewWord error:', err);
+                showError('Gagal menyimpan kata. Pastikan server n8n berjalan dan webhook aktif.');
+            }).finally(function () {
+                btn.disabled = false;
+                btn.textContent = 'Save Word';
+            });
+        }
+
+        // -------------------------------------------------------
+        // Export CSV
+        // -------------------------------------------------------
+        function exportVocab() {
+            var rows = ['word,part_of_speech,level,definition,mastered,session_topic,learned_at'];
+            allVocabs.forEach(function (v) {
+                rows.push([
+                    '"' + (v.vocab_word || v.word || '').replace(/"/g, '""') + '"',
+                    v.part_of_speech || v.type || '',
+                    v.level || v.vocab_level || '',
+                    '"' + (v.definition || v.meaning || '').replace(/"/g, '""') + '"',
+                    (v.is_mastered === true || v.is_mastered === 'true') ? 'yes' : 'no',
+                    v.session_topic || '',
+                    v.learned_at || ''
+                ].join(','));
+            });
+            var a = document.createElement('a');
+            a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(rows.join('\n'));
+            a.download = 'vocabulary-export.csv';
+            a.click();
+        }
+
+        // -------------------------------------------------------
+        // Edit Modal
+        // -------------------------------------------------------
+        function openEditModal(id) {
+            var v = allVocabs.filter(function (x) { return x.id === id; })[0];
+            if (!v) return;
+            var m = document.getElementById('editWordModal');
+            // Populate fields
+            document.getElementById('editVocabId').value = v.id || '';
+            document.getElementById('editWord').value = v.vocab_word || v.word || '';
+            document.getElementById('editPos').value = v.part_of_speech || 'NOUN';
+            document.getElementById('editLevel').value = v.level || v.vocab_level || 'B1';
+            document.getElementById('editDef').value = v.definition || v.meaning || '';
+            document.getElementById('editPronunciation').value = v.pronunciation || v.phonetic || '';
+            document.getElementById('editMeaningId').value = v.meaning_id || v.indonesian || '';
+            var isMastered = (v.is_mastered === true || v.is_mastered === 'true');
+            document.getElementById('editIsMastered').value = isMastered ? 'true' : 'false';
+            document.getElementById('editStatusLearning').checked = !isMastered;
+            document.getElementById('editStatusMastered').checked = isMastered;
+            m.classList.remove('hidden'); m.classList.add('flex');
+            setTimeout(function () { document.getElementById('editWord').focus(); }, 100);
+        }
+        function closeEditModal() {
+            var m = document.getElementById('editWordModal');
+            m.classList.add('hidden'); m.classList.remove('flex');
+        }
+
+        function submitEditWord() {
+            var vocabId = document.getElementById('editVocabId').value;
+            var word = document.getElementById('editWord').value.trim();
+            var pos = document.getElementById('editPos').value;
+            var level = document.getElementById('editLevel').value;
+            var def = document.getElementById('editDef').value.trim();
+            var pron = document.getElementById('editPronunciation').value.trim();
+            var meaning = document.getElementById('editMeaningId').value.trim();
+            var mastered = document.getElementById('editIsMastered').value === 'true';
+            if (!word || !vocabId) return;
+
+            var btn = document.getElementById('saveEditBtn');
+            btn.disabled = true; btn.textContent = 'Saving...';
+
+            fetchTimeout(VOCAB_EDIT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    user_id: CURRENT_USER_ID,
+                    vocabulary_id: vocabId,
+                    vocab_word: word,
+                    part_of_speech: pos,
+                    level: level,
+                    definition: def,
+                    pronunciation: pron,
+                    meaning_id: meaning,
+                    is_mastered: mastered
+                })
+            }).then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            }).then(function (data) {
+                // Update local state
+                var v = allVocabs.filter(function (x) { return x.id === vocabId; })[0];
+                if (v) {
+                    v.vocab_word = word;
+                    v.part_of_speech = pos;
+                    v.level = level;
+                    v.definition = def;
+                    v.pronunciation = pron;
+                    v.meaning_id = meaning;
+                    v.is_mastered = mastered;
+                }
+                // Rebuild stats
+                if (statsCache) {
+                    statsCache.total_mastered = allVocabs.filter(function (x) { return x.is_mastered === true || x.is_mastered === 'true'; }).length;
+                    statsCache.total_learning = allVocabs.filter(function (x) { return !(x.is_mastered === true || x.is_mastered === 'true'); }).length;
+                    updateStatsBar(statsCache);
+                }
+                applyFilterSort(); renderPage(); updateHeader();
+                closeEditModal();
+            }).catch(function (err) {
+                console.error('submitEditWord error:', err);
+                showError('Gagal memperbarui vocab. Pastikan webhook /vocabulary/edit aktif.');
+            }).finally(function () {
+                btn.disabled = false; btn.textContent = 'Save Changes';
+            });
+        }
+
+        // -------------------------------------------------------
+        // Delete Confirmation
+        // -------------------------------------------------------
+        var pendingDeleteId = null;
+        var pendingDeleteWord = '';
+
+        function confirmDelete(id, word) {
+            pendingDeleteId = id;
+            pendingDeleteWord = word;
+            var m = document.getElementById('deleteConfirmModal');
+            document.getElementById('deleteWordName').textContent = '"' + word + '"';
+            m.classList.remove('hidden'); m.classList.add('flex');
+        }
+        function closeDeleteModal() {
+            var m = document.getElementById('deleteConfirmModal');
+            m.classList.add('hidden'); m.classList.remove('flex');
+            pendingDeleteId = null; pendingDeleteWord = '';
+        }
+
+        function executeDelete() {
+            if (!pendingDeleteId) return;
+            var id = pendingDeleteId;
+            var btn = document.getElementById('confirmDeleteBtn');
+            btn.disabled = true; btn.textContent = 'Deleting...';
+
+            fetchTimeout(VOCAB_DELETE_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: CURRENT_USER_ID, vocabulary_id: id })
+            }).then(function (res) {
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                return res.json();
+            }).then(function () {
+                // Remove from local state
+                allVocabs = allVocabs.filter(function (v) { return v.id !== id; });
+                if (statsCache) {
+                    statsCache.total_words = allVocabs.length;
+                    statsCache.total_mastered = allVocabs.filter(function (v) { return v.is_mastered === true || v.is_mastered === 'true'; }).length;
+                    statsCache.total_learning = allVocabs.filter(function (v) { return !(v.is_mastered === true || v.is_mastered === 'true'); }).length;
+                    updateStatsBar(statsCache);
+                }
+                applyFilterSort(); renderPage(); updateHeader();
+                closeDeleteModal();
+            }).catch(function (err) {
+                console.error('executeDelete error:', err);
+                showError('Gagal menghapus vocab. Pastikan webhook /vocabulary/delete aktif.');
+                btn.disabled = false; btn.textContent = 'Delete';
+            });
+        }
+
+        // -------------------------------------------------------
+        // MAIN: Fetch dari webhook /vocabulary/list
+
+        //
+        // Struktur response (dari n8n Code: Build Response Payload):
+        // {
+        //   user:  { id, name, level, avatar_url },
+        //   stats: { total_words, total_mastered, total_learning },
+        //   vocabs: [{ id, vocab_word, part_of_speech, level, definition,
+        //              is_mastered, is_difficult, session_topic,
+        //              learned_at, created_at }]
+        // }
+        // -------------------------------------------------------
+
+
+        function fetchVocabData() {
+            fetchTimeout(VOCAB_LIST_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ user_id: CURRENT_USER_ID })
+            }).then(function (res) {
+                if (!res.ok) { return res.text().then(function (t) { throw new Error('HTTP ' + res.status + ': ' + t.substring(0, 100)); }); }
+                return res.json();
+            }).then(function (data) {
+                // Parse vocabs — support berbagai format
+                var vocabs = [];
+                if (Array.isArray(data)) vocabs = data;
+                else if (Array.isArray(data.vocabs)) vocabs = data.vocabs;
+                else if (Array.isArray(data.data)) vocabs = data.data;
+                else if (Array.isArray(data.vocabularies)) vocabs = data.vocabularies;
+                else vocabs = [data];
+
+                if (data.user) updateUserInfo(data.user);
+
+                if (data.stats) {
+                    statsCache = data.stats;
+                } else {
+                    // Hitung manual jika stats tidak ada di response
+                    statsCache = {
+                        total_words: vocabs.length,
+                        total_mastered: vocabs.filter(function (v) { return v.is_mastered === true || v.is_mastered === 'true'; }).length,
+                        total_learning: vocabs.filter(function (v) { return !(v.is_mastered === true || v.is_mastered === 'true'); }).length
+                    };
+                }
+                updateStatsBar(statsCache);
+
+                allVocabs = vocabs;
+                applyFilterSort();
+                renderPage();
+                updateHeader();
+                hideError();
+
+            }).catch(function (error) {
+                console.error('fetchVocabData error:', error);
+                var isTimeout = error.name === 'AbortError';
+                showError(isTimeout
+                    ? 'Request timeout. Pastikan n8n berjalan di localhost:5678.'
+                    : 'Tidak dapat terhubung ke webhook. Menampilkan data demo.');
+
+                // Demo fallback — struktur identik dengan webhook
+                allVocabs = [
+                    { id: 'v-001', vocab_word: 'Ephemerality', part_of_speech: 'NOUN', level: 'C1', definition: 'The concept of things being transitory, existing only briefly.', is_mastered: true, is_difficult: false, session_topic: 'Advanced Writing', learned_at: '2025-05-10T08:00:00Z' },
+                    { id: 'v-002', vocab_word: 'Exacerbate', part_of_speech: 'VERB', level: 'B2', definition: 'Make a problem, bad situation, or negative feeling worse.', is_mastered: false, is_difficult: false, session_topic: 'Business English', learned_at: '2025-05-12T10:00:00Z' },
+                    { id: 'v-003', vocab_word: 'Quintessence', part_of_speech: 'NOUN', level: 'C2', definition: 'The most perfect or typical example of a quality or class.', is_mastered: false, is_difficult: true, session_topic: 'Literature Review', learned_at: '2025-05-14T09:30:00Z' },
+                    { id: 'v-004', vocab_word: 'Resilient', part_of_speech: 'ADJECTIVE', level: 'B1', definition: 'Able to withstand or recover quickly from difficult conditions.', is_mastered: true, is_difficult: false, session_topic: 'Daily Conversation', learned_at: '2025-05-08T11:00:00Z' },
+                    { id: 'v-005', vocab_word: 'Substantiate', part_of_speech: 'VERB', level: 'C1', definition: 'Provide evidence to support or prove the truth of.', is_mastered: false, is_difficult: false, session_topic: 'Academic Writing', learned_at: '2025-05-15T14:00:00Z' },
+                    { id: 'v-006', vocab_word: 'Reliable', part_of_speech: 'ADJECTIVE', level: 'A2', definition: 'Consistently good in quality or performance; able to be trusted.', is_mastered: true, is_difficult: false, session_topic: 'Beginner Vocabulary', learned_at: '2025-05-01T08:00:00Z' },
+                    { id: 'v-007', vocab_word: 'Ubiquitous', part_of_speech: 'ADJECTIVE', level: 'C1', definition: 'Present, appearing, or found everywhere.', is_mastered: true, is_difficult: false, session_topic: 'Tech Vocabulary', learned_at: '2025-05-11T16:00:00Z' },
+                    { id: 'v-008', vocab_word: 'Plethora', part_of_speech: 'NOUN', level: 'B2', definition: 'A large or excessive amount of something.', is_mastered: false, is_difficult: false, session_topic: 'Writing Workshop', learned_at: '2025-05-13T09:00:00Z' },
+                    { id: 'v-009', vocab_word: 'Ambiguous', part_of_speech: 'ADJECTIVE', level: 'B2', definition: 'Open to more than one interpretation; not having one obvious meaning.', is_mastered: false, is_difficult: false, session_topic: 'Critical Thinking', learned_at: '2025-05-09T10:00:00Z' },
+                    { id: 'v-010', vocab_word: 'Diligent', part_of_speech: 'ADJECTIVE', level: 'B1', definition: "Having or showing care in one's work or duties.", is_mastered: true, is_difficult: false, session_topic: 'Workplace English', learned_at: '2025-05-06T13:00:00Z' },
+                    { id: 'v-011', vocab_word: 'Eloquent', part_of_speech: 'ADJECTIVE', level: 'C1', definition: 'Fluent or persuasive in speaking or writing.', is_mastered: false, is_difficult: false, session_topic: 'Public Speaking', learned_at: '2025-05-16T08:00:00Z' },
+                    { id: 'v-012', vocab_word: 'Meticulous', part_of_speech: 'ADJECTIVE', level: 'B2', definition: 'Showing great attention to detail or correct behavior.', is_mastered: false, is_difficult: false, session_topic: 'Professional Writing', learned_at: '2025-05-17T07:00:00Z' }
+                ];
+                updateUserInfo({ name: 'Tri Jatmiko', level: 'Intermediate', avatar_url: null });
+                statsCache = {
+                    total_words: allVocabs.length,
+                    total_mastered: allVocabs.filter(function (v) { return v.is_mastered; }).length,
+                    total_learning: allVocabs.filter(function (v) { return !v.is_mastered; }).length
+                };
+                updateStatsBar(statsCache);
+                applyFilterSort();
+                renderPage();
+                updateHeader();
+            });
+        }
+
+        // -------------------------------------------------------
+        // Event Listeners + Init — semua di dalam DOMContentLoaded
+        // agar modal (#detailModal, #addWordModal) sudah ada di DOM
+        // sebelum addEventListener dipanggil
+        // -------------------------------------------------------
+        document.addEventListener('DOMContentLoaded', function () {
+
+            // Filter buttons
+            document.getElementById('filter-container').addEventListener('click', function (e) {
+                var btn = e.target.closest('[data-filter]');
+                if (!btn) return;
+                currentFilter = btn.getAttribute('data-filter');
+                document.querySelectorAll('[data-filter]').forEach(function (b) {
+                    b.classList.remove('bg-primary', 'text-on-primary', 'border-primary');
+                    b.classList.add('glass-card', 'border-border-subtle', 'text-on-surface-variant');
+                });
+                btn.classList.add('bg-primary', 'text-on-primary', 'border-primary');
+                btn.classList.remove('glass-card', 'border-border-subtle', 'text-on-surface-variant');
+                applyFilterSort(); renderPage();
+            });
+
+            // Sort
+            document.getElementById('sortSelect').addEventListener('change', function (e) {
+                currentSort = e.target.value; applyFilterSort(); renderPage();
+            });
+
+            // Search
+            var searchTimer;
+            document.getElementById('searchInput').addEventListener('input', function (e) {
+                clearTimeout(searchTimer);
+                searchTimer = setTimeout(function () {
+                    searchQuery = e.target.value.toLowerCase().trim();
+                    applyFilterSort(); renderPage();
+                }, 300);
+            });
+
+            // Modal backdrop click — elemen ini ada di bawah script, jadi HARUS di DOMContentLoaded
+            document.getElementById('detailModal').addEventListener('click', function (e) {
+                if (e.target === e.currentTarget) closeDetailModal();
+            });
+            document.getElementById('addWordModal').addEventListener('click', function (e) {
+                if (e.target === e.currentTarget) closeAddWordModal();
+            });
+            document.getElementById('importModal').addEventListener('click', function (e) {
+                if (e.target === e.currentTarget) closeImportModal();
+            });
+            document.getElementById('editWordModal').addEventListener('click', function (e) {
+                if (e.target === e.currentTarget) closeEditModal();
+            });
+            document.getElementById('deleteConfirmModal').addEventListener('click', function (e) {
+                if (e.target === e.currentTarget) closeDeleteModal();
+            });
+
+            // Escape key
+            document.addEventListener('keydown', function (e) {
+                if (e.key === 'Escape') { closeDetailModal(); closeAddWordModal(); closeImportModal(); closeEditModal(); closeDeleteModal(); }
+            });
+
+            // Fetch data dari n8n
+            fetchVocabData();
+        });
+
+        // -------------------------------------------------------
+        // IMPORT ANKI — parse .txt tab-separated ANKI export
+        // Format kolom: Indonesian \t English \t Pronunciation \t Example Sentence
+        // -------------------------------------------------------
+        var importedRows = [];   // array of parsed row objects
+
+        function openImportModal() {
+            var m = document.getElementById('importModal');
+            m.classList.remove('hidden'); m.classList.add('flex');
+            clearImport();
+        }
+        function closeImportModal() {
+            var m = document.getElementById('importModal');
+            m.classList.add('hidden'); m.classList.remove('flex');
+        }
+
+        function handleAnkiDrop(event) {
+            event.preventDefault();
+            document.getElementById('importDropZone').classList.remove('border-secondary');
+            var file = event.dataTransfer.files[0];
+            if (file) handleAnkiFile(file);
+        }
+
+        function handleAnkiFile(file) {
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function (e) {
+                parseAnkiContent(e.target.result);
+            };
+            reader.readAsText(file, 'UTF-8');
+        }
+
+        function parseAnkiContent(text) {
+            var lines = text.split('\n');
+            importedRows = [];
+            lines.forEach(function (line) {
+                line = line.trim();
+                // Skip metadata lines & empty lines
+                if (!line || line.startsWith('#')) return;
+                var cols = line.split('\t');
+                // Minimal 2 kolom: Indonesian + English
+                if (cols.length < 2) return;
+                var indonesian = (cols[0] || '').trim();
+                var english = (cols[1] || '').trim();
+                var pronunciation = (cols[2] || '').trim();
+                var example = (cols[3] || '').trim();
+                if (!english) return;
+                importedRows.push({
+                    meaning_id: indonesian,     // bahasa Indonesia
+                    vocab_word: english,         // English word → vocab_word di DB
+                    pronunciation: pronunciation,  // IPA / phonetic
+                    definition: example          // example sentence → definition di DB
+                });
+            });
+            renderImportPreview();
+        }
+
+        function renderImportPreview() {
+            var preview = document.getElementById('importPreview');
+            var options = document.getElementById('importOptions');
+            var doBtn = document.getElementById('doImportBtn');
+            var tbody = document.getElementById('importTableBody');
+            var count = document.getElementById('importCount');
+
+            if (importedRows.length === 0) {
+                preview.classList.add('hidden');
+                options.classList.add('hidden');
+                doBtn.disabled = true;
+                return;
+            }
+
+            count.textContent = importedRows.length;
+            tbody.innerHTML = importedRows.map(function (r) {
+                return '<tr>'
+                    + '<td class="px-3 py-2 text-on-surface font-medium">' + escHtml(r.vocab_word) + '</td>'
+                    + '<td class="px-3 py-2 text-on-surface-variant">' + escHtml(r.meaning_id) + '</td>'
+                    + '<td class="px-3 py-2 text-secondary italic">' + escHtml(r.pronunciation) + '</td>'
+                    + '<td class="px-3 py-2 text-text-muted truncate max-w-[180px]" title="' + escHtml(r.definition) + '">' + escHtml(r.definition.substring(0, 50)) + (r.definition.length > 50 ? '\u2026' : '') + '</td>'
+                    + '</tr>';
+            }).join('');
+
+            preview.classList.remove('hidden');
+            options.classList.remove('hidden');
+            doBtn.disabled = false;
+            resetImportProgress();
+        }
+
+        function clearImport() {
+            importedRows = [];
+            document.getElementById('ankiFileInput').value = '';
+            document.getElementById('importPreview').classList.add('hidden');
+            document.getElementById('importOptions').classList.add('hidden');
+            document.getElementById('doImportBtn').disabled = true;
+            document.getElementById('doImportBtn').classList.remove('hidden');
+            document.getElementById('importCancelBtn').classList.remove('hidden');
+            document.getElementById('importDoneBtn').classList.add('hidden');
+            resetImportProgress();
+        }
+
+        function resetImportProgress() {
+            document.getElementById('importProgressWrap').classList.add('hidden');
+            document.getElementById('importProgressBar').style.width = '0%';
+            document.getElementById('importProgressText').textContent = '0 / 0';
+            document.getElementById('importResultMsg').classList.add('hidden');
+        }
+
+        // Import semua baris — kirim satu per satu ke webhook /vocabulary/add
+        // Webhook add sudah support vocab_word + definition + pronunciation + meaning_id
+        function startImport() {
+            if (importedRows.length === 0) return;
+            var level = document.getElementById('importLevel').value;
+            var pos = document.getElementById('importPos').value;
+            var btn = document.getElementById('doImportBtn');
+            var progWrap = document.getElementById('importProgressWrap');
+            var progBar = document.getElementById('importProgressBar');
+            var progText = document.getElementById('importProgressText');
+            var resultMsg = document.getElementById('importResultMsg');
+
+            btn.disabled = true;
+            btn.textContent = 'Importing...';
+            progWrap.classList.remove('hidden');
+            resultMsg.classList.add('hidden');
+
+            var total = importedRows.length;
+            var done = 0;
+            var success = 0;
+            var failed = 0;
+
+            // Sequential import — hindari flood ke webhook
+            function importNext(index) {
+                if (index >= total) {
+                    resultMsg.textContent = '\u2713 Import selesai: ' + success + ' berhasil, ' + failed + ' gagal dari ' + total + ' kata.';
+                    resultMsg.className = 'font-helper-text text-xs rounded-lg px-3 py-2 ' + (failed === 0 ? 'bg-tertiary/10 text-tertiary' : 'bg-status-warning/10 text-status-warning');
+                    resultMsg.classList.remove('hidden');
+                    // Swap footer: sembunyikan Cancel + Import Semua, tampilkan Done
+                    document.getElementById('importCancelBtn').classList.add('hidden');
+                    btn.classList.add('hidden');
+                    document.getElementById('importDoneBtn').classList.remove('hidden');
+                    if (success > 0) { setTimeout(function () { fetchVocabData(); }, 800); }
+                    return;
+                }
+
+                var row = importedRows[index];
+                var payload = {
+                    user_id: CURRENT_USER_ID,
+                    vocab_word: row.vocab_word,
+                    part_of_speech: pos,
+                    level: level,
+                    definition: row.definition,
+                    pronunciation: row.pronunciation,
+                    meaning_id: row.meaning_id
+                };
+
+                fetchTimeout(VOCAB_ADD_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }, 12000).then(function (res) {
+                    if (res.ok) success++; else failed++;
+                }).catch(function () {
+                    failed++;
+                }).finally(function () {
+                    done++;
+                    var pct = Math.round((done / total) * 100);
+                    progBar.style.width = pct + '%';
+                    progText.textContent = done + ' / ' + total;
+                    importNext(index + 1);
+                });
+            }
+
+            importNext(0);
+        }
+
+        function escHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+    </script>
+
+    <!-- ========== DETAIL MODAL ========== -->
+    <div id="detailModal"
+        class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div
+            class="glass-card w-full max-w-lg rounded-2xl flex flex-col overflow-hidden border border-border-subtle shadow-2xl">
+            <div class="p-6 border-b border-border-subtle flex items-center justify-between">
+                <div>
+                    <h2 id="detailWord" class="font-headline-modal text-2xl text-on-surface"></h2>
+                    <div class="flex items-center gap-2 mt-1">
+                        <span id="detailPos"
+                            class="font-section-label text-[10px] text-on-surface-variant bg-surface-container/50 px-2 py-0.5 rounded"></span>
+                        <span id="detailLevel"
+                            class="font-section-label text-[10px] text-primary bg-primary/10 px-2 py-0.5 rounded-full"></span>
+                    </div>
+                    <!-- Pronunciation badge -->
+                    <p id="detailPhonetic" class="font-helper-text text-secondary italic mt-1.5 text-sm hidden"></p>
+                </div>
+                <button onclick="closeDetailModal()"
+                    class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface-variant">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <!-- Indonesian meaning -->
+                <div id="detailMeaningBlock" class="hidden">
+                    <p class="font-section-label text-section-label text-text-muted mb-1">ARTI (INDONESIA)</p>
+                    <p id="detailMeaning" class="font-body-large text-secondary leading-relaxed"></p>
+                </div>
+                <div>
+                    <p class="font-section-label text-section-label text-text-muted mb-1">DEFINITION / EXAMPLE</p>
+                    <p id="detailDef" class="font-body-large text-on-surface-variant leading-relaxed"></p>
+                </div>
+                <!-- Metadata dari webhook: session_topic + learned_at -->
+                <div id="detailMeta" class="pt-2 space-y-1"></div>
+            </div>
+            <div class="p-6 pt-0 flex justify-end gap-3">
+                <button onclick="closeDetailModal()"
+                    class="px-5 py-2 glass-card rounded-lg border border-border-subtle text-on-surface-variant font-button-text text-[13px] hover:text-on-surface transition-all">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== ADD WORD MODAL ========== -->
+    <div id="addWordModal"
+        class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div
+            class="glass-card w-full max-w-lg rounded-2xl flex flex-col overflow-hidden border border-border-subtle shadow-2xl">
+            <div class="p-6 border-b border-border-subtle flex items-center justify-between">
+                <div>
+                    <h2 class="font-headline-modal text-xl text-on-surface">Add New Word</h2>
+                    <p class="font-helper-text text-text-muted">Add a vocabulary to your collection</p>
+                </div>
+                <button onclick="closeAddWordModal()"
+                    class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface-variant">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="p-6 space-y-4 overflow-y-auto custom-scrollbar" style="max-height:72vh">
+                <!-- Row 1: Word -->
+                <div>
+                    <label class="font-section-label text-section-label text-text-muted block mb-1">WORD *</label>
+                    <input id="newWord" type="text" placeholder="e.g. Ephemeral"
+                        class="w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none" />
+                </div>
+                <!-- Row 2: POS + Level -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="font-section-label text-section-label text-text-muted block mb-1">PART OF
+                            SPEECH</label>
+                        <select id="newPos"
+                            class="appearance-none w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none">
+                            <option value="NOUN">Noun</option>
+                            <option value="VERB">Verb</option>
+                            <option value="ADJECTIVE">Adjective</option>
+                            <option value="ADVERB">Adverb</option>
+                            <option value="PRONOUN">Pronoun</option>
+                            <option value="PREPOSITION">Preposition</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="font-section-label text-section-label text-text-muted block mb-1">LEVEL</label>
+                        <select id="newLevel"
+                            class="appearance-none w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none">
+                            <option value="A1">A1</option>
+                            <option value="A2">A2</option>
+                            <option value="B1">B1</option>
+                            <option value="B2" selected>B2</option>
+                            <option value="C1">C1</option>
+                            <option value="C2">C2</option>
+                        </select>
+                    </div>
+                </div>
+                <!-- Row 3: Pronunciation -->
+                <div>
+                    <label class="font-section-label text-section-label text-text-muted block mb-1">
+                        PRONUNCIATION
+                        <span class="text-text-muted font-normal normal-case ml-1">(opsional)</span>
+                    </label>
+                    <div class="relative">
+                        <span
+                            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px] pointer-events-none">record_voice_over</span>
+                        <input id="newPronunciation" type="text" placeholder="e.g. /ɪˈfem.ər.əl/"
+                            class="w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 pl-10 pr-4 text-[14px] text-secondary placeholder:text-text-muted focus:ring-1 focus:ring-secondary/50 outline-none font-mono" />
+                    </div>
+                </div>
+                <!-- Row 4: Meaning Indonesia -->
+                <div>
+                    <label class="font-section-label text-section-label text-text-muted block mb-1">
+                        ARTI (INDONESIA)
+                        <span class="text-text-muted font-normal normal-case ml-1">(opsional)</span>
+                    </label>
+                    <div class="relative">
+                        <span
+                            class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-on-surface-variant text-[16px] pointer-events-none">translate</span>
+                        <input id="newMeaningId" type="text" placeholder="e.g. bersifat sementara"
+                            class="w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 pl-10 pr-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none" />
+                    </div>
+                </div>
+                <!-- Row 5: Definition -->
+                <div>
+                    <label class="font-section-label text-section-label text-text-muted block mb-1">
+                        DEFINITION / EXAMPLE
+                        <span class="text-text-muted font-normal normal-case ml-1">(opsional)</span>
+                    </label>
+                    <textarea id="newDef" rows="3" placeholder="Tulis definisi atau contoh kalimat..."
+                        class="w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none resize-none"></textarea>
+                </div>
+            </div>
+            <div class="p-6 pt-0 flex justify-end gap-3">
+                <button onclick="closeAddWordModal()"
+                    class="px-5 py-2 glass-card rounded-lg border border-border-subtle text-on-surface-variant font-button-text text-[13px] hover:text-on-surface transition-all">Cancel</button>
+                <button id="saveWordBtn" onclick="submitNewWord()"
+                    class="px-5 py-2 bg-primary text-on-primary font-button-text text-[13px] rounded-lg hover:opacity-90 transition-opacity">Save
+                    Word</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== IMPORT ANKI MODAL ========== -->
+    <div id="importModal"
+        class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div
+            class="glass-card w-full max-w-xl rounded-2xl flex flex-col overflow-hidden border border-border-subtle shadow-2xl">
+            <div class="p-6 border-b border-border-subtle flex items-center justify-between">
+                <div>
+                    <h2 class="font-headline-modal text-xl text-on-surface">Import from ANKI</h2>
+                    <p class="font-helper-text text-text-muted mt-0.5">File .txt tab-separated: Indonesian · English ·
+                        Pronunciation · Example</p>
+                </div>
+                <button onclick="closeImportModal()"
+                    class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface-variant">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="p-6 space-y-5">
+                <!-- Drop zone -->
+                <div id="importDropZone"
+                    class="border-2 border-dashed border-border-subtle rounded-xl p-8 flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-secondary/60 transition-colors group"
+                    onclick="document.getElementById('ankiFileInput').click()"
+                    ondragover="event.preventDefault();this.classList.add('border-secondary')"
+                    ondragleave="this.classList.remove('border-secondary')" ondrop="handleAnkiDrop(event)">
+                    <span
+                        class="material-symbols-outlined text-[40px] text-on-surface-variant group-hover:text-secondary transition-colors">upload_file</span>
+                    <p class="font-body-large text-on-surface-variant text-sm text-center">Drop file ANKI <span
+                            class="text-on-surface font-bold">.txt</span> di sini<br />atau <span
+                            class="text-secondary underline">browse file</span></p>
+                    <input id="ankiFileInput" type="file" accept=".txt" class="hidden"
+                        onchange="handleAnkiFile(this.files[0])" />
+                </div>
+                <!-- Preview table -->
+                <div id="importPreview" class="hidden">
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="font-section-label text-section-label text-text-muted">PREVIEW — <span
+                                id="importCount">0</span> KATA TERDETEKSI</p>
+                        <button onclick="clearImport()"
+                            class="font-helper-text text-xs text-error hover:underline">Hapus</button>
+                    </div>
+                    <div class="rounded-xl border border-border-subtle overflow-hidden">
+                        <div class="overflow-y-auto custom-scrollbar" style="max-height:220px">
+                            <table class="w-full text-[12px]">
+                                <thead class="bg-surface-container sticky top-0">
+                                    <tr class="text-left">
+                                        <th class="px-3 py-2 font-section-label text-[10px] text-text-muted">ENGLISH
+                                        </th>
+                                        <th class="px-3 py-2 font-section-label text-[10px] text-text-muted">INDONESIA
+                                        </th>
+                                        <th class="px-3 py-2 font-section-label text-[10px] text-text-muted">
+                                            PRONUNCIATION</th>
+                                        <th class="px-3 py-2 font-section-label text-[10px] text-text-muted">EXAMPLE
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody id="importTableBody" class="divide-y divide-border-subtle"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                <!-- Options -->
+                <div id="importOptions" class="hidden space-y-3">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="font-section-label text-section-label text-text-muted block mb-1">DEFAULT
+                                LEVEL</label>
+                            <select id="importLevel"
+                                class="appearance-none w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none">
+                                <option value="A1">A1</option>
+                                <option value="A2" selected>A2</option>
+                                <option value="B1">B1</option>
+                                <option value="B2">B2</option>
+                                <option value="C1">C1</option>
+                                <option value="C2">C2</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="font-section-label text-section-label text-text-muted block mb-1">DEFAULT
+                                POS</label>
+                            <select id="importPos"
+                                class="appearance-none w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none">
+                                <option value="NOUN">Noun</option>
+                                <option value="VERB">Verb</option>
+                                <option value="ADJECTIVE">Adjective</option>
+                                <option value="ADVERB">Adverb</option>
+                            </select>
+                        </div>
+                    </div>
+                    <!-- Progress bar (hidden until import starts) -->
+                    <div id="importProgressWrap" class="hidden">
+                        <div class="flex justify-between mb-1">
+                            <span class="font-helper-text text-xs text-text-muted">Mengimpor...</span>
+                            <span id="importProgressText" class="font-helper-text text-xs text-secondary">0 / 0</span>
+                        </div>
+                        <div class="h-1.5 bg-surface-container rounded-full overflow-hidden">
+                            <div id="importProgressBar"
+                                class="h-full bg-secondary rounded-full transition-all duration-300" style="width:0%">
+                            </div>
+                        </div>
+                    </div>
+                    <div id="importResultMsg" class="hidden font-helper-text text-xs rounded-lg px-3 py-2"></div>
+                </div>
+            </div>
+            <div class="p-6 pt-0 flex justify-end gap-3">
+                <button id="importCancelBtn" onclick="closeImportModal()"
+                    class="px-5 py-2 glass-card rounded-lg border border-border-subtle text-on-surface-variant font-button-text text-[13px] hover:text-on-surface transition-all">Cancel</button>
+                <button id="doImportBtn" onclick="startImport()" disabled
+                    class="px-5 py-2 bg-secondary text-on-secondary font-button-text text-[13px] rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed">
+                    Import Semua
+                </button>
+                <button id="importDoneBtn" onclick="closeImportModal()"
+                    class="hidden px-6 py-2 bg-tertiary text-on-tertiary font-button-text text-[13px] rounded-lg hover:opacity-90 transition-all flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[16px]">check_circle</span>
+                    Done
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== EDIT WORD MODAL ========== -->
+    <div id="editWordModal"
+        class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div
+            class="glass-card w-full max-w-lg rounded-2xl flex flex-col overflow-hidden border border-border-subtle shadow-2xl">
+            <div class="p-6 border-b border-border-subtle flex items-center justify-between">
+                <div>
+                    <h2 class="font-headline-modal text-xl text-on-surface">Edit Vocabulary</h2>
+                    <p class="font-helper-text text-text-muted">Update word data in your collection</p>
+                </div>
+                <button onclick="closeEditModal()"
+                    class="w-10 h-10 rounded-full flex items-center justify-center hover:bg-surface-container transition-colors text-on-surface-variant">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div class="p-6 space-y-4 overflow-y-auto custom-scrollbar" style="max-height:70vh">
+                <input type="hidden" id="editVocabId" />
+                <div>
+                    <label class="font-section-label text-section-label text-text-muted block mb-1">WORD *</label>
+                    <input id="editWord" type="text" placeholder="e.g. Ephemeral"
+                        class="w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none" />
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="font-section-label text-section-label text-text-muted block mb-1">PART OF
+                            SPEECH</label>
+                        <select id="editPos"
+                            class="appearance-none w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none">
+                            <option value="NOUN">Noun</option>
+                            <option value="VERB">Verb</option>
+                            <option value="ADJECTIVE">Adjective</option>
+                            <option value="ADVERB">Adverb</option>
+                            <option value="PRONOUN">Pronoun</option>
+                            <option value="PREPOSITION">Preposition</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="font-section-label text-section-label text-text-muted block mb-1">LEVEL</label>
+                        <select id="editLevel"
+                            class="appearance-none w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none">
+                            <option value="A1">A1</option>
+                            <option value="A2">A2</option>
+                            <option value="B1">B1</option>
+                            <option value="B2">B2</option>
+                            <option value="C1">C1</option>
+                            <option value="C2">C2</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="font-section-label text-section-label text-text-muted block mb-1">PRONUNCIATION /
+                        PHONETIC</label>
+                    <input id="editPronunciation" type="text" placeholder="e.g. /ɪˈfem.ər.əl/"
+                        class="w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none" />
+                </div>
+                <div>
+                    <label class="font-section-label text-section-label text-text-muted block mb-1">ARTI (INDONESIA /
+                        MEANING_ID)</label>
+                    <input id="editMeaningId" type="text" placeholder="e.g. bersifat sementara"
+                        class="w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none" />
+                </div>
+                <div>
+                    <label class="font-section-label text-section-label text-text-muted block mb-1">DEFINITION /
+                        EXAMPLE</label>
+                    <textarea id="editDef" rows="3" placeholder="Definition or example sentence..."
+                        class="w-full bg-surface-container-low border border-border-subtle rounded-lg py-2.5 px-4 text-[14px] text-on-surface focus:ring-1 focus:ring-primary/50 outline-none resize-none"></textarea>
+                </div>
+                <div>
+                    <label class="font-section-label text-section-label text-text-muted block mb-2">STATUS</label>
+                    <div class="flex gap-3">
+                        <label class="flex items-center gap-2 cursor-pointer group">
+                            <div class="relative">
+                                <input type="radio" name="editMasteredRadio" value="false" id="editStatusLearning"
+                                    onchange="document.getElementById('editIsMastered').value='false'"
+                                    class="peer sr-only" />
+                                <div
+                                    class="w-4 h-4 rounded-full border-2 border-outline peer-checked:border-secondary peer-checked:bg-secondary transition-colors">
+                                </div>
+                            </div>
+                            <span
+                                class="font-section-label text-[11px] text-on-surface-variant group-hover:text-on-surface transition-colors">Learning</span>
+                        </label>
+                        <label class="flex items-center gap-2 cursor-pointer group">
+                            <div class="relative">
+                                <input type="radio" name="editMasteredRadio" value="true" id="editStatusMastered"
+                                    onchange="document.getElementById('editIsMastered').value='true'"
+                                    class="peer sr-only" />
+                                <div
+                                    class="w-4 h-4 rounded-full border-2 border-outline peer-checked:border-tertiary peer-checked:bg-tertiary transition-colors">
+                                </div>
+                            </div>
+                            <span
+                                class="font-section-label text-[11px] text-on-surface-variant group-hover:text-on-surface transition-colors">Mastered</span>
+                        </label>
+                    </div>
+                    <input type="hidden" id="editIsMastered" value="false" />
+                </div>
+            </div>
+            <div class="p-6 pt-4 flex justify-end gap-3 border-t border-border-subtle">
+                <button onclick="closeEditModal()"
+                    class="px-5 py-2 glass-card rounded-lg border border-border-subtle text-on-surface-variant font-button-text text-[13px] hover:text-on-surface transition-all">Cancel</button>
+                <button id="saveEditBtn" onclick="submitEditWord()"
+                    class="px-5 py-2 bg-secondary text-on-secondary font-button-text text-[13px] rounded-lg hover:opacity-90 transition-opacity flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[16px]">save</span>
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ========== DELETE CONFIRM MODAL ========== -->
+    <div id="deleteConfirmModal"
+        class="fixed inset-0 z-[100] hidden items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div
+            class="glass-card w-full max-w-sm rounded-2xl flex flex-col overflow-hidden border border-error/30 shadow-2xl">
+            <div class="p-6 border-b border-border-subtle flex items-center gap-4">
+                <div class="w-10 h-10 rounded-full bg-error/10 flex items-center justify-center flex-shrink-0">
+                    <span class="material-symbols-outlined text-error text-[22px]">warning</span>
+                </div>
+                <div>
+                    <h2 class="font-headline-modal text-base text-on-surface">Delete Vocabulary?</h2>
+                    <p class="font-helper-text text-text-muted text-xs mt-0.5">This action cannot be undone</p>
+                </div>
+            </div>
+            <div class="p-6">
+                <p class="font-body-large text-on-surface-variant text-[14px] leading-relaxed">
+                    Kata <span id="deleteWordName" class="text-on-surface font-bold"></span> akan dihapus dari koleksimu
+                    secara permanen.
+                </p>
+            </div>
+            <div class="p-6 pt-0 flex justify-end gap-3">
+                <button onclick="closeDeleteModal()"
+                    class="px-5 py-2 glass-card rounded-lg border border-border-subtle text-on-surface-variant font-button-text text-[13px] hover:text-on-surface transition-all">Cancel</button>
+                <button id="confirmDeleteBtn" onclick="executeDelete()"
+                    class="px-5 py-2 bg-error text-on-error font-button-text text-[13px] rounded-lg hover:opacity-90 transition-opacity flex items-center gap-2">
+                    <span class="material-symbols-outlined text-[16px]">delete_forever</span>
+                    Delete
+                </button>
+            </div>
+        </div>
+    </div>
+
+</body>
+
+</html>

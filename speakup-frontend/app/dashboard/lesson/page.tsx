@@ -1,0 +1,3105 @@
+// @ts-nocheck
+'use client';
+import { useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
+import { getCurrentUserId, useSession } from '@/hooks/useSession';
+
+export default function LessonPage() {
+  const router = useRouter();
+  const { clearSession } = useSession();
+  const hasMounted = useRef(false);
+
+  useEffect(() => {
+    if (hasMounted.current) return;
+    hasMounted.current = true;
+
+    if (!getCurrentUserId()) {
+      router.push('/login');
+      // return; // Keep running if we want to preview without login, but Next.js router.push might take a bit.
+    }
+
+    
+        const N8N_BASE_URL = process.env.NEXT_PUBLIC_N8N_BASE_URL || 'http://localhost:5678/webhook';
+        const VOCAB_DASHBOARD_SYNC_URL = `${N8N_BASE_URL}/vocab/sync-dashboard`;
+        const VOCAB_DASHBOARD_PULL_URL = `${N8N_BASE_URL}/vocab/pull-dashboard`;
+        const USER_PROFILE_URL = `${N8N_BASE_URL}/user/profile`;
+        const DUMMY_USER_ID = getCurrentUserId() || '86b04bfc-e6b7-4265-bcc9-3ef949eba7c3';
+
+        let sessionId = null;
+        let selectedLevel = 'A1';
+        let isRecording = false;
+        let recorder = null;
+        let audioChunks = [];
+        let messageCount = 0;
+        let correctionCount = 0;
+        let micStream = null;
+        let sessionCorrections = [];
+
+        let audioContext = null;
+        let analyser = null;
+        let animationId = null;
+        const barElements = document.querySelectorAll('#waveBars .bar');
+
+        let currentAudio = null;
+        let currentObjectURL = null;
+        let isSendingAudio = false;
+        let pendingAudioToken = 0;
+
+        const appContainer = document.getElementById('app');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const toggleIcon = document.getElementById('toggleIcon');
+        const chatArea = document.getElementById('chatArea');
+        const emptyState = document.getElementById('emptyState');
+        const btnStart = document.getElementById('btnStart');
+        const recordBtn = document.getElementById('recordBtn');
+        const recorderStatus = document.getElementById('recorderStatus');
+        const recorderHint = document.getElementById('recorderHint');
+        const waveBars = document.getElementById('waveBars');
+        const sessionBadge = document.getElementById('sessionBadge');
+        const topicTag = document.getElementById('topicTag');
+        const statMessages = document.getElementById('statMessages');
+        const statCorrections = document.getElementById('statCorrections');
+        const statCorrectionsBtn = document.getElementById('statCorrectionsBtn');
+        const statAnalysisBtn = document.getElementById('statAnalysisBtn');
+        const toast = document.getElementById('toast');
+
+        const userGreeting = document.getElementById('userGreeting');
+        const topicSelect = document.getElementById('topicSelect');
+        const vocabInputContainer = document.getElementById('vocabInputContainer');
+        const vocabInput = document.getElementById('vocabInput');
+        const btnPullDashboard = document.getElementById('btnPullDashboard');
+        const pullPreview = document.getElementById('pullPreview');
+        const pullCountBadge = document.getElementById('pullCountBadge');
+        const pullChips = document.getElementById('pullChips');
+        const btnUsePulled = document.getElementById('btnUsePulled');
+        const btnDiscardPulled = document.getElementById('btnDiscardPulled');
+
+        const correctionsModal = document.getElementById('correctionsModal');
+        const modalBody = document.getElementById('modalBody');
+
+        const analysisModal = document.getElementById('analysisModal');
+        const analysisFluency = document.getElementById('analysisFluency');
+        const analysisVocab = document.getElementById('analysisVocab');
+        const analysisGrammar = document.getElementById('analysisGrammar');
+        const analysisPronunciation = document.getElementById('analysisPronunciation');
+        const analysisOverall = document.getElementById('analysisOverall');
+
+        const vocabDrawer = document.getElementById('vocabDrawer');
+        const vocabDrawerBtn = document.getElementById('vocabDrawerBtn');
+        const closeVocabDrawerBtn = document.getElementById('closeVocabDrawerBtn');
+        const vocabDrawerList = document.getElementById('vocabDrawerList');
+        const vocabDrawerProgress = document.getElementById('vocabDrawerProgress');
+        const btnDashboardSync = document.getElementById('btnDashboardSync');
+
+        let targetVocabWords = [];
+        let currentUserName = null;
+
+        function setUserGreeting(name, isLoading = false) {
+            userGreeting.classList.toggle('is-loading', isLoading);
+            if (isLoading) {
+                userGreeting.textContent = 'Hi, …';
+                return;
+            }
+            const displayName = (name || 'Learner').trim();
+            userGreeting.innerHTML = `Hi, <span class="user-greeting-name">${displayName}</span>`;
+        }
+
+        async function loadUserProfile() {
+            setUserGreeting(null, true);
+            try {
+                const res = await fetch(USER_PROFILE_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ user_id: DUMMY_USER_ID })
+                });
+
+                const rawText = await res.text();
+                let data = null;
+                try {
+                    data = rawText ? JSON.parse(rawText) : null;
+                } catch (_) { }
+
+                if (!res.ok) {
+                    throw new Error(data?.error || `HTTP ${res.status}`);
+                }
+
+                if (data && data.success === false) {
+                    throw new Error(data.error || 'Profile load failed');
+                }
+
+                const user = data?.user || data || {};
+                const name =
+                    user.display_name ||
+                    user.first_name ||
+                    user.name ||
+                    data?.display_name ||
+                    data?.name;
+
+                if (!name || !String(name).trim()) {
+                    throw new Error('No display name in response');
+                }
+
+                currentUserName = String(name).trim();
+                setUserGreeting(currentUserName, false);
+
+                // Ambil avatar_url dari response (field dari DB)
+                const avatarUrl = user.avatar_url || user.photo_url || user.picture || data?.avatar_url || null;
+                updateProfileAvatar(currentUserName, avatarUrl);
+
+            } catch (err) {
+                console.warn('User profile load failed:', err);
+                setUserGreeting('Learner', false);
+                updateProfileAvatar('Learner', null);
+            }
+        }
+
+        loadUserProfile();
+
+        function closeAllModals() {
+            correctionsModal.classList.remove('open');
+            analysisModal.classList.remove('open');
+            vocabDrawer.classList.remove('open');
+        }
+
+        document.addEventListener('click', (e) => {
+            const closeBtn = e.target.closest('[data-close]');
+            if (closeBtn) {
+                e.preventDefault();
+                const modal = document.getElementById(closeBtn.dataset.close);
+                if (modal) modal.classList.remove('open');
+                return;
+            }
+
+            if (e.target.classList.contains('modal-overlay') && e.target.classList.contains('open')) {
+                e.target.classList.remove('open');
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeAllModals();
+        });
+
+        statCorrectionsBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAllModals();
+            renderCorrectionsModal();
+            correctionsModal.classList.add('open');
+        });
+
+        statAnalysisBtn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            closeAllModals();
+            analysisModal.classList.add('open');
+            await loadAnalysis();
+        });
+
+        function setAnalysisScores(scores) {
+            analysisFluency.textContent = scores.fluency ?? '--';
+            analysisVocab.textContent = scores.vocabulary ?? '--';
+            analysisGrammar.textContent = scores.grammar ?? '--';
+            analysisPronunciation.textContent = scores.pronunciation ?? '--';
+            analysisOverall.textContent = scores.overall ?? selectedLevel;
+        }
+
+        function computeLocalAnalysis() {
+            const userTurns = Math.max(1, Math.floor(messageCount / 2));
+            const errorRate = correctionCount / userTurns;
+            const grammarScore = Math.max(0, Math.round(100 - errorRate * 40));
+            const fluencyScore = Math.min(100, 50 + userTurns * 8);
+            return {
+                fluency: fluencyScore + '/100',
+                vocabulary: selectedLevel,
+                grammar: grammarScore + '/100',
+                pronunciation: '—',
+                overall: selectedLevel
+            };
+        }
+
+        async function loadAnalysis() {
+            if (!sessionId) {
+                setAnalysisScores({
+                    fluency: '--',
+                    vocabulary: '--',
+                    grammar: '--',
+                    pronunciation: '--',
+                    overall: 'Start a session first'
+                });
+                return;
+            }
+
+            analysisOverall.textContent = 'Calculating...';
+            analysisFluency.textContent = '...';
+            analysisVocab.textContent = '...';
+            analysisGrammar.textContent = '...';
+            analysisPronunciation.textContent = '...';
+
+            try {
+                const res = await fetch(`${N8N_BASE_URL}/session/analysis`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        user_id: DUMMY_USER_ID
+                    })
+                });
+
+                const rawText = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(rawText);
+                } catch (_) {
+                    data = null;
+                }
+
+                if (res.ok && data && (data.success !== false)) {
+                    const a = data.analysis || data;
+                    setAnalysisScores({
+                        fluency: a.fluency ?? a.fluency_score,
+                        vocabulary: a.vocabulary ?? a.vocab_score,
+                        grammar: a.grammar ?? a.grammar_score,
+                        pronunciation: a.pronunciation ?? a.pronunciation_score,
+                        overall: a.overall ?? a.cefr_level ?? a.level ?? selectedLevel
+                    });
+                    return;
+                }
+            } catch (err) {
+                console.warn('Analysis API unavailable, using local estimate:', err);
+            }
+
+            setAnalysisScores(computeLocalAnalysis());
+        }
+
+        sidebarToggle.addEventListener('click', (e) => {
+            e.stopPropagation();
+            appContainer.classList.toggle('sidebar-hidden');
+            const isHidden = appContainer.classList.contains('sidebar-hidden');
+            toggleIcon.textContent = isHidden ? 'chevron_right' : 'chevron_left';
+            sidebarToggle.title = isHidden ? 'Show Sidebar' : 'Hide Sidebar';
+        });
+
+        function isVocabTopic() {
+            return topicSelect.value.trim() === 'Vocab';
+        }
+
+        // showVocabBox: tampil hanya ketika topik Vocab DAN sesi belum aktif
+        function updateVocabBoxVisibility() {
+            if (!vocabInputContainer) return;
+            const show = isVocabTopic() && !sessionId;
+            vocabInputContainer.classList.toggle('vocab-box-hidden', !show);
+            vocabInputContainer.hidden = !show;
+
+            // Dynamic visibility of the Vocab Mission sidebar row
+            vocabDrawerBtn.style.display = isVocabTopic() ? 'flex' : 'none';
+            if (!isVocabTopic()) vocabDrawer.classList.remove('open');
+
+            if (show) {
+                if (btnPullDashboard && typeof isSendingAudio !== 'undefined' && !isSendingAudio) {
+                    btnPullDashboard.disabled = false;
+                }
+                requestAnimationFrame(() => vocabInput && vocabInput.focus());
+            }
+        }
+
+        // Reset session state saat topic berubah
+        topicSelect.addEventListener('change', () => {
+            sessionId = null;
+            sessionBadge.textContent = 'No session';
+            sessionBadge.classList.remove('active');
+            topicTag.textContent = 'Choose a topic to start';
+            btnStart.disabled = false;
+            btnStart.textContent = 'Start Session';
+            btnStart.classList.add('pulse-start');
+            recordBtn.disabled = true;
+            recorderStatus.textContent = 'Start a session first';
+            recorderHint.textContent = 'Select topic & level, then click Start Session';
+            hidePullPreview();
+            updateVocabBoxVisibility();
+        });
+        topicSelect.addEventListener('input', updateVocabBoxVisibility);
+        updateVocabBoxVisibility();
+
+        document.querySelectorAll('.pill').forEach(pill => {
+            pill.addEventListener('click', (e) => {
+                e.stopPropagation();
+                document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+                pill.classList.add('active');
+                selectedLevel = pill.dataset.level;
+            });
+        });
+
+        function renderCorrectionsModal() {
+            if (sessionCorrections.length === 0) {
+                modalBody.innerHTML = '<div class="modal-empty">No corrections yet in this session.</div>';
+                return;
+            }
+
+            modalBody.innerHTML = '';
+            sessionCorrections.forEach(c => {
+                const item = document.createElement('div');
+                item.className = 'correction-item';
+
+                const card = document.createElement('div');
+                card.className = 'correction-card';
+                card.innerHTML = `
+                    <div class="correction-title">📝 Grammar Correction</div>
+                    <div class="correction-row">
+                      <span class="tag wrong">❌</span>
+                      <span class="correction-text">${parseMarkdown(c.wrong)}</span>
+                    </div>
+                    <div class="correction-row">
+                      <span class="tag right">✅</span>
+                      <span class="correction-text">${parseMarkdown(c.right)}</span>
+                    </div>
+                    <div class="correction-row">
+                      <span class="tag why">💡</span>
+                      <span class="correction-text">${parseMarkdown(c.reason)}</span>
+                    </div>
+                `;
+                item.appendChild(card);
+                modalBody.appendChild(item);
+            });
+        }
+
+        function showToast(msg, isError = false) {
+            toast.textContent = msg;
+            toast.className = 'toast show' + (isError ? ' error' : '');
+            setTimeout(() => toast.className = 'toast', 3000);
+        }
+
+        function getSupportedMimeType() {
+            const types = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus', 'audio/ogg'];
+            for (const type of types) {
+                if (MediaRecorder.isTypeSupported(type)) return type;
+            }
+            return '';
+        }
+
+        function nowTime() {
+            return new Date().toLocaleTimeString('id-ID', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function parseMarkdown(rawStr) {
+            if (!rawStr) return '';
+            return rawStr
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+        }
+
+        function appendMessage(role, text, correction = null, patternToUse = null) {
+            if (!text || text.trim() === '') return;
+            if (text === '…') correction = null;
+
+            const existingEmptyState = document.getElementById('emptyState');
+            if (existingEmptyState) {
+                existingEmptyState.remove();
+            }
+
+            const row = document.createElement('div');
+            row.className = `message-row ${role}`;
+
+            const avatar = document.createElement('div');
+            avatar.className = `avatar ${role === 'assistant' ? 'ai' : 'user'}`;
+            avatar.textContent = role === 'assistant' ? '🤖' : '🙂';
+
+            const wrap = document.createElement('div');
+            wrap.className = 'bubble-wrap';
+
+            const bubble = document.createElement('div');
+            bubble.className = `bubble ${role === 'assistant' ? 'ai' : 'user'}`;
+            bubble.innerHTML = parseMarkdown(text);
+
+            const time = document.createElement('div');
+            time.className = 'bubble-time';
+            time.textContent = nowTime();
+
+            wrap.appendChild(bubble);
+
+            if (role === 'assistant' && patternToUse && patternToUse !== 'NONE') {
+                const patternCard = document.createElement('div');
+                patternCard.className = 'pattern-card';
+                patternCard.innerHTML = `
+                    <div class="pattern-title">💡 Pattern to Use (Petunjuk Jawab)</div>
+                    <div class="pattern-body">${patternToUse}</div>
+                `;
+                wrap.appendChild(patternCard);
+            }
+
+            if (correction && correction.has_error) {
+                sessionCorrections.push(correction);
+
+                const card = document.createElement('div');
+                card.className = 'correction-card';
+                card.innerHTML = `
+                    <div class="correction-title">📝 Grammar Correction</div>
+                    <div class="correction-row">
+                      <span class="tag wrong">❌</span>
+                      <span class="correction-text">${parseMarkdown(correction.wrong)}</span>
+                    </div>
+                    <div class="correction-row">
+                      <span class="tag right">✅</span>
+                      <span class="correction-text">${parseMarkdown(correction.right)}</span>
+                    </div>
+                    <div class="correction-row">
+                      <span class="tag why">💡</span>
+                      <span class="correction-text">${parseMarkdown(correction.reason)}</span>
+                    </div>
+                `;
+                wrap.appendChild(card);
+                correctionCount++;
+                statCorrections.textContent = correctionCount;
+            }
+
+            wrap.appendChild(time);
+            row.appendChild(avatar);
+            row.appendChild(wrap);
+
+            chatArea.appendChild(row);
+            chatArea.scrollTop = chatArea.scrollHeight;
+
+            messageCount++;
+            statMessages.textContent = messageCount;
+        }
+
+        function showTyping() {
+            const row = document.createElement('div');
+            row.className = 'message-row assistant';
+            row.id = 'typingRow';
+
+            row.innerHTML = `
+                <div class="avatar ai">🤖</div>
+                <div class="bubble-wrap">
+                  <div class="typing">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </div>
+                </div>
+            `;
+
+            chatArea.appendChild(row);
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function hideTyping() {
+            const row = document.getElementById('typingRow');
+            if (row) row.remove();
+        }
+
+        btnStart.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            btnStart.classList.remove('pulse-start');
+
+            const topic = topicSelect.value;
+            const targetVocab = vocabInput ? vocabInput.value.trim() : '';
+
+            if (topic === 'Vocab' && !targetVocab) {
+                updateVocabBoxVisibility();
+                showToast('Masukkan kata vocab di kotak Target Vocabulary', true);
+                vocabInput && vocabInput.focus();
+                return;
+            }
+
+            btnStart.disabled = true;
+            btnStart.textContent = 'Starting…';
+
+            try {
+                const res = await fetch(`${N8N_BASE_URL}/session/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        user_id: DUMMY_USER_ID,
+                        user_name: currentUserName || 'Friend',
+                        topic: topic === 'Vocab' ? `Practice vocabulary: ${targetVocab}` : topic,
+                        level: selectedLevel,
+                        target_vocabulary: topic === 'Vocab' ? targetVocab : undefined
+                    })
+                });
+
+                const rawText = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(rawText);
+                } catch (e) {
+                    showToast('Response bukan JSON', true);
+                    throw new Error('Invalid JSON response');
+                }
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}: ${rawText.slice(0, 200)}`);
+                }
+
+                if (!data.success) {
+                    throw new Error(data.error || 'Session failed');
+                }
+
+                sessionId = data.session_id;
+
+                sessionBadge.textContent = 'Session Active';
+                sessionBadge.classList.add('active');
+                topicTag.textContent = topic === 'Vocab' ? 'Vocab Practice' : topic;
+
+                btnStart.disabled = false;
+                btnStart.textContent = 'New Session';
+                recordBtn.disabled = false;
+
+                recorderStatus.textContent = 'Click to record your answer';
+                recorderHint.textContent = 'Speak clearly in English';
+
+                try {
+                    if (micStream) {
+                        micStream.getTracks().forEach(track => track.stop());
+                    }
+                    micStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            channelCount: 1
+                        }
+                    });
+                } catch (e) {
+                    showToast('Microphone access denied', true);
+                }
+
+                messageCount = 0;
+                correctionCount = 0;
+                sessionCorrections = [];
+                statMessages.textContent = '0';
+                statCorrections.textContent = '0';
+                chatArea.innerHTML = '';
+
+                if (topic === 'Vocab' && targetVocab) {
+                    // Sembunyikan vocab box setelah sesi aktif (sesuai frontend)
+                    updateVocabBoxVisibility();
+                    appendMessage('user', `I'd like to practice using these words: **${targetVocab}**`);
+                    parseVocabWords();
+                }
+
+                appendMessage('assistant', data.opening_message, null, data.pattern_to_use);
+                showToast('Session started! 🎉');
+
+            } catch (err) {
+                console.error(err);
+                showToast('Failed to start session', true);
+                btnStart.disabled = false;
+                btnStart.textContent = 'Start Session';
+            }
+        });
+
+        recordBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (!sessionId) return;
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        });
+
+        async function startRecording() {
+            try {
+                if (!micStream) {
+                    micStream = await navigator.mediaDevices.getUserMedia({
+                        audio: {
+                            echoCancellation: true,
+                            noiseSuppression: true,
+                            autoGainControl: true,
+                            channelCount: 1
+                        }
+                    });
+                }
+
+                if (!audioContext) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioContext.state === 'suspended') {
+                    await audioContext.resume();
+                }
+
+                analyser = audioContext.createAnalyser();
+                analyser.fftSize = 64;
+                const source = audioContext.createMediaStreamSource(micStream);
+                source.connect(analyser);
+
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                const draw = () => {
+                    animationId = requestAnimationFrame(draw);
+                    analyser.getByteFrequencyData(dataArray);
+
+                    const step = Math.floor(dataArray.length / barElements.length);
+
+                    barElements.forEach((bar, i) => {
+                        const val = dataArray[i * step];
+                        const height = Math.max(4, (val / 255) * 32);
+                        bar.style.height = `${height}px`;
+                    });
+                };
+                draw();
+
+                audioChunks = [];
+                const mimeType = getSupportedMimeType();
+                const recorderOptions = mimeType ? { mimeType } : {};
+                recorder = new MediaRecorder(micStream, recorderOptions);
+
+                recorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        audioChunks.push(event.data);
+                    }
+                };
+
+                recorder.start();
+                isRecording = true;
+
+                recordBtn.classList.add('recording');
+                recordBtn.textContent = '⏹️';
+                waveBars.classList.add('active');
+
+                recorderStatus.textContent = 'Recording… click to stop';
+                recorderHint.textContent = 'Speak now';
+
+            } catch (err) {
+                console.error(err);
+                showToast('Microphone access denied', true);
+            }
+        }
+
+        function stopRecording() {
+            if (!recorder || recorder.state === 'inactive') return;
+
+            const recordedMime = recorder.mimeType || 'audio/webm';
+
+            recorder.onstop = async () => {
+                const blob = new Blob(audioChunks, { type: recordedMime });
+                await sendAudio(blob);
+            };
+
+            recorder.stop();
+            isRecording = false;
+
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            if (analyser) {
+                analyser.disconnect();
+                analyser = null;
+            }
+            barElements.forEach(bar => bar.style.height = '4px');
+
+            recordBtn.classList.remove('recording');
+            recordBtn.textContent = '🎤';
+            waveBars.classList.remove('active');
+
+            recorderStatus.textContent = 'Processing…';
+            recorderHint.textContent = 'Please wait';
+            recordBtn.disabled = true;
+        }
+
+        async function sendAudio(blob) {
+            if (isSendingAudio) return;
+            isSendingAudio = true;
+
+            const myToken = ++pendingAudioToken;
+            showTyping();
+
+            try {
+                recorderStatus.textContent = 'Preparing upload…';
+
+                const presignRes = await fetch(`${N8N_BASE_URL}/upload/presign`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        user_id: DUMMY_USER_ID,
+                        content_type: blob.type || 'audio/webm'
+                    })
+                });
+
+                if (!presignRes.ok) throw new Error(`Presign failed: ${presignRes.status}`);
+                const presignData = await presignRes.json();
+
+                recorderStatus.textContent = 'Uploading audio…';
+                const uploadRes = await fetch(presignData.presigned_url, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': blob.type || 'audio/webm' },
+                    body: blob
+                });
+
+                if (!uploadRes.ok) throw new Error(`MinIO upload failed: ${uploadRes.status}`);
+
+                recorderStatus.textContent = 'Processing…';
+                const res = await fetch(`${N8N_BASE_URL}/conversation`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        session_id: sessionId,
+                        user_id: DUMMY_USER_ID,
+                        user_name: currentUserName || 'Friend',
+                        object_key: presignData.object_key,
+                        topic: topicSelect.value === 'Vocab' ? `Practice vocabulary: ${vocabInput ? vocabInput.value : ''}` : topicSelect.value,
+                        level: selectedLevel,
+                        target_vocabulary: topicSelect.value === 'Vocab' ? (vocabInput ? vocabInput.value : undefined) : undefined
+                    })
+                });
+
+                const rawText = await res.text();
+                let data;
+                try {
+                    data = JSON.parse(rawText);
+                } catch (e) {
+                    throw new Error(rawText);
+                }
+
+                hideTyping();
+
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${rawText.slice(0, 200)}`);
+                if (!data.success) throw new Error(data.error || 'Unknown error');
+
+                const userText = (data.user_text || '').trim();
+                const correction = (userText && data.correction) ? data.correction : null;
+
+                appendMessage('user', userText || '…', correction);
+
+                const hasGrammarError = data.correction && data.correction.has_error;
+
+                if (userText) {
+                    checkSpokenVocab(userText, hasGrammarError);
+                }
+                if (myToken === pendingAudioToken) {
+                    if (hasGrammarError) {
+                        await playSoundEffect(SOUND_WRONG);
+                    } else {
+                        await playSoundEffect(SOUND_CORRECT);
+                    }
+                }
+
+                if (myToken === pendingAudioToken && hasGrammarError && data.correction_audio_url) {
+                    recorderStatus.textContent = '🔊 Mendengarkan koreksi…';
+                    recorderHint.textContent = 'Correction sedang dibacakan, tunggu sebentar';
+                    showTTSBadge('correction');
+                    await playAudio(data.correction_audio_url, data.correction_audio_format || 'mp3');
+                }
+
+                if (myToken === pendingAudioToken) {
+                    appendMessage('assistant', data.conversation, null, data.pattern_to_use);
+
+                    if (data.audio_url) {
+                        recorderStatus.textContent = '🔊 Tutor sedang berbicara…';
+                        recorderHint.textContent = 'Dengarkan pertanyaan berikutnya';
+                        showTTSBadge('conversation');
+                        await playAudio(data.audio_url, data.audio_format || 'mp3');
+                    } else if (data.audio_base64) {
+                        showTTSBadge('conversation');
+                        await playAudio(data.audio_base64, data.audio_format || 'mp3');
+                    }
+                }
+
+            } catch (err) {
+                hideTyping();
+                hideTTSBadge();
+                console.error(err);
+                showToast('Audio processing failed: ' + err.message, true);
+            } finally {
+                isSendingAudio = false;
+                recordBtn.disabled = false;
+                recorderStatus.textContent = 'Click to record your answer';
+                recorderHint.textContent = 'Speak clearly in English';
+            }
+        }
+
+        let ttsBadgeEl = null;
+        let ttsBadgeWrapper = null;
+
+        function showTTSBadge(type) {
+            hideTTSBadge();
+
+            const badge = document.createElement('div');
+            badge.className = 'tts-badge tts-badge--' + type;
+            badge.innerHTML = type === 'correction'
+                ? '<span class="tts-icon">📝</span><span>Tutor memberikan koreksi…</span><div class="tts-wave"><span></span><span></span><span></span><span></span></div>'
+                : '<span class="tts-icon">🤖</span><span>Tutor berbicara…</span><div class="tts-wave"><span></span><span></span><span></span><span></span></div>';
+
+            if (type === 'correction') {
+                const userRows = chatArea.querySelectorAll('.message-row.user');
+                const lastUserRow = userRows[userRows.length - 1];
+                if (lastUserRow) {
+                    const wrap = lastUserRow.querySelector('.bubble-wrap');
+                    if (wrap) {
+                        badge.style.alignSelf = 'flex-end';
+                        wrap.appendChild(badge);
+                        ttsBadgeEl = badge;
+                        chatArea.scrollTop = chatArea.scrollHeight;
+                        return;
+                    }
+                }
+            }
+
+            const row = document.createElement('div');
+            row.className = 'message-row assistant';
+            row.id = 'ttsBadgeRow';
+
+            const avatarPlaceholder = document.createElement('div');
+            avatarPlaceholder.className = 'avatar ai';
+            avatarPlaceholder.style.opacity = '0';
+
+            const wrap = document.createElement('div');
+            wrap.className = 'bubble-wrap';
+            wrap.appendChild(badge);
+
+            row.appendChild(avatarPlaceholder);
+            row.appendChild(wrap);
+
+            chatArea.appendChild(row);
+            ttsBadgeEl = badge;
+            ttsBadgeWrapper = row;
+            chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function hideTTSBadge() {
+            if (ttsBadgeWrapper) {
+                ttsBadgeWrapper.remove();
+                ttsBadgeWrapper = null;
+            }
+            if (ttsBadgeEl) {
+                ttsBadgeEl.remove();
+                ttsBadgeEl = null;
+            }
+        }
+
+        const SOUND_CORRECT = '/sounds/correct.mp3';
+        const SOUND_WRONG = '/sounds/wrong.mp3';
+
+        async function playSoundEffect(url) {
+            return new Promise((resolve) => {
+                try {
+                    const audio = new Audio(url);
+                    audio.volume = 0.6;
+                    audio.onended = () => resolve();
+                    audio.onerror = () => resolve();
+                    audio.play().catch(() => resolve());
+                } catch (e) {
+                    resolve();
+                }
+            });
+        }
+
+        function getAudioContext() {
+            if (!audioContext || audioContext.state === 'closed') {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            if (audioContext.state === 'suspended') audioContext.resume();
+            return audioContext;
+        }
+
+        async function playAudio(audioData, format = 'mp3') {
+            stopCurrentAudio();
+
+            return new Promise(async (resolve) => {
+                try {
+                    let arrayBuffer;
+
+                    if (typeof audioData === 'string' && (audioData.startsWith('http') || audioData.startsWith('/'))) {
+                        arrayBuffer = await new Promise((res, rej) => {
+                            const xhr = new XMLHttpRequest();
+                            xhr.open('GET', audioData, true);
+                            xhr.responseType = 'arraybuffer';
+                            xhr.onload = () => {
+                                if (xhr.status >= 200 && xhr.status < 300) res(xhr.response);
+                                else rej(new Error(`XHR failed: ${xhr.status}`));
+                            };
+                            xhr.onerror = () => rej(new Error('XHR network error'));
+                            xhr.send();
+                        });
+                    } else if (typeof audioData === 'string') {
+                        const base64 = audioData.replace(/^data:audio\/[^;]+;base64,/, '').replace(/\s/g, '');
+                        const byteChars = atob(base64);
+                        const bytes = new Uint8Array(byteChars.length);
+                        for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+                        arrayBuffer = bytes.buffer;
+                    } else if (audioData instanceof ArrayBuffer) {
+                        arrayBuffer = audioData;
+                    } else {
+                        resolve();
+                        return;
+                    }
+
+                    const ctx = getAudioContext();
+                    const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+                    const source = ctx.createBufferSource();
+                    source.buffer = audioBuffer;
+                    source.connect(ctx.destination);
+                    currentAudio = source;
+
+                    const durationMs = audioBuffer.duration * 1200;
+                    source.start(0);
+
+                    source.onended = () => {
+                        if (currentAudio === source) currentAudio = null;
+                        hideTTSBadge();
+                    };
+
+                    setTimeout(() => resolve(), durationMs + 300);
+                } catch (e) {
+                    console.warn('Could not play audio:', e);
+                    resolve();
+                }
+            });
+        }
+
+        function stopCurrentAudio() {
+            if (currentAudio) {
+                try { currentAudio.stop(); } catch (_) { }
+                currentAudio.onended = null;
+                currentAudio = null;
+            }
+            if (currentObjectURL) {
+                URL.revokeObjectURL(currentObjectURL);
+                currentObjectURL = null;
+            }
+        }
+
+        // ============================================================
+        // VOCAB DRAWER CONTROLLER LOGIC
+        // ============================================================
+        vocabDrawerBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            closeAllModals();
+            vocabDrawer.classList.toggle('open');
+            updateVocabDrawerList();
+        });
+
+        closeVocabDrawerBtn.addEventListener('click', () => {
+            vocabDrawer.classList.remove('open');
+        });
+
+        if (vocabInput) {
+            vocabInput.addEventListener('input', () => parseVocabWords());
+        }
+
+        // ── Pull from Dashboard ──────────────────────────────────
+        // State: vocab yang baru di-pull (belum di-apply ke input)
+        let pulledVocabRaw = '';
+
+        // State vocab yang di-pull — array of {word, level, removed}
+        let pulledVocabItems = [];
+
+        function updatePullBadge() {
+            const active = pulledVocabItems.filter(v => !v.removed).length;
+            const total = pulledVocabItems.length;
+            pullCountBadge.textContent = active + ' / ' + total + ' kata';
+        }
+
+        function rebuildPulledVocabRaw() {
+            return pulledVocabItems.filter(v => !v.removed).map(v => v.word).join(', ');
+        }
+
+        function renderPullChips() {
+            pullChips.innerHTML = pulledVocabItems.map((v, idx) => {
+                if (v.removed) return '';
+                const level = v.level ? `<span class="chip-level">${v.level}</span>` : '';
+                return `<div class="pull-chip" data-idx="${idx}">
+                    ${level}${v.word}
+                    <button class="chip-remove" data-idx="${idx}" title="Hapus kata ini">✕</button>
+                </div>`;
+            }).join('');
+
+            // Attach click handlers untuk setiap X button
+            pullChips.querySelectorAll('.chip-remove').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const idx = parseInt(btn.dataset.idx);
+                    pulledVocabItems[idx].removed = true;
+                    // Animasi chip hilang
+                    const chip = pullChips.querySelector(`.pull-chip[data-idx="${idx}"]`);
+                    if (chip) {
+                        chip.style.transition = 'all 0.2s ease';
+                        chip.style.opacity = '0';
+                        chip.style.transform = 'scale(0.7)';
+                        setTimeout(() => renderPullChips(), 200);
+                    }
+                    updatePullBadge();
+                    pulledVocabRaw = rebuildPulledVocabRaw();
+                    // Jika semua dihapus, sembunyikan preview
+                    if (pulledVocabItems.every(v => v.removed)) {
+                        hidePullPreview();
+                        showToast('Semua vocab dihapus dari preview');
+                    }
+                });
+            });
+
+            updatePullBadge();
+        }
+
+        function showPullPreview(vocabList, vocabularyRaw) {
+            // Init state — semua aktif (removed: false)
+            pulledVocabItems = vocabList.map(v => ({
+                word: v.word,
+                level: v.level || '',
+                removed: false
+            }));
+            pulledVocabRaw = vocabularyRaw;
+
+            renderPullChips();
+            pullPreview.classList.add('visible');
+        }
+
+        function hidePullPreview() {
+            pullPreview.classList.remove('visible');
+            pullChips.innerHTML = '';
+            pulledVocabRaw = '';
+            pulledVocabItems = [];
+        }
+
+        if (btnPullDashboard) {
+            btnPullDashboard.addEventListener('click', async () => {
+                btnPullDashboard.disabled = true;
+                hidePullPreview();
+                const icon = btnPullDashboard.querySelector('.material-symbols-outlined');
+                if (icon) icon.classList.add('animation-spin');
+                try {
+                    const res = await fetch(VOCAB_DASHBOARD_PULL_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ user_id: DUMMY_USER_ID })
+                    });
+                    const rawText = await res.text();
+                    let data = null;
+                    try { data = rawText ? JSON.parse(rawText) : null; } catch (_) { }
+                    if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+                    if (data && data.success === false) throw new Error(data.error || 'Tidak ada vocab yang belum dikuasai di dashboard.');
+
+                    const vocabList = data?.vocab_list || [];
+                    const vocabularyRaw = data?.vocabulary_raw || '';
+
+                    if (!vocabularyRaw || vocabList.length === 0) {
+                        showToast('Tidak ada vocab unmastered di dashboard', true);
+                        return;
+                    }
+
+                    // Tampilkan preview — user konfirmasi sebelum apply
+                    showPullPreview(vocabList, vocabularyRaw);
+                    showToast(`${vocabList.length} vocab ditemukan — klik "Gunakan vocab ini" untuk apply ✅`);
+
+                } catch (err) {
+                    console.warn('Pull dashboard failed:', err);
+                    showToast('Gagal pull: ' + err.message, true);
+                } finally {
+                    if (icon) icon.classList.remove('animation-spin');
+                    btnPullDashboard.disabled = false;
+                }
+            });
+        }
+
+        // "Gunakan vocab ini" — apply hanya vocab yang tidak dihapus
+        if (btnUsePulled) {
+            btnUsePulled.addEventListener('click', () => {
+                const activeRaw = typeof rebuildPulledVocabRaw === 'function'
+                    ? rebuildPulledVocabRaw()
+                    : pulledVocabRaw;
+                if (!activeRaw) {
+                    showToast('Tidak ada vocab yang dipilih', true);
+                    return;
+                }
+                if (vocabInput) {
+                    vocabInput.value = activeRaw;
+                    parseVocabWords();
+                }
+                const activeCount = activeRaw.split(',').filter(w => w.trim()).length;
+                hidePullPreview();
+                showToast(`${activeCount} vocab berhasil dimuat dari dashboard ✅`);
+            });
+        }
+
+        // "Batalkan" — buang preview
+        if (btnDiscardPulled) {
+            btnDiscardPulled.addEventListener('click', () => {
+                hidePullPreview();
+                showToast('Preview dibatalkan');
+            });
+        }
+
+        function parseVocabWords() {
+            if (!vocabInput) return;
+            const inputVal = vocabInput.value;
+            if (!inputVal.trim()) {
+                targetVocabWords = [];
+            } else {
+                const words = inputVal.split(',').map(w => w.trim()).filter(w => w.length > 0);
+
+                // Sinkronisasi status kata lama agar tidak reset ketika menambahkan kata baru
+                targetVocabWords = words.map(word => {
+                    const existing = targetVocabWords.find(w => w.word.toLowerCase() === word.toLowerCase());
+                    return existing ? existing : { word: word, achieved: false, sentence: '' };
+                });
+            }
+            updateVocabProgressBadge();
+            updateVocabDrawerList();
+        }
+
+        function updateVocabProgressBadge() {
+            const total = targetVocabWords.length;
+            const achievedCount = targetVocabWords.filter(w => w.achieved).length;
+            vocabDrawerProgress.textContent = `${achievedCount}/${total}`;
+            updateSyncButton();
+        }
+
+        function updateSyncButton() {
+            const achievedCount = targetVocabWords.filter(w => w.achieved).length;
+            const labelEl = document.getElementById('btnSyncLabel');
+            if (achievedCount > 0) {
+                btnDashboardSync.classList.add('sync-ready');
+                if (labelEl) labelEl.textContent = `Sync ${achievedCount} Achieved Word${achievedCount > 1 ? 's' : ''}`;
+            } else {
+                btnDashboardSync.classList.remove('sync-ready');
+                if (labelEl) labelEl.textContent = 'Sync to Dashboard';
+            }
+        }
+
+        function updateVocabDrawerList() {
+            if (targetVocabWords.length === 0) {
+                vocabDrawerList.innerHTML = `<div class="modal-empty">Input target vocabulary first in the left sidebar to track your mission.</div>`;
+                return;
+            }
+
+            vocabDrawerList.innerHTML = '';
+            targetVocabWords.forEach(item => {
+                const card = document.createElement('div');
+                card.className = `vocab-mission-item ${item.achieved ? 'achieved' : ''}`;
+
+                card.innerHTML = `
+                    <div class="vocab-item-word-row">
+                      <span class="vocab-item-word">${item.word}</span>
+                      <span class="vocab-item-status">${item.achieved ? 'Spoken' : 'Target'}</span>
+                    </div>
+                    ${item.achieved && item.sentence ? `<div class="vocab-item-sentence">"${item.sentence}"</div>` : ''}
+                `;
+                vocabDrawerList.appendChild(card);
+            });
+        }
+
+        function checkSpokenVocab(userTranscript, hasGrammarError) {
+            if (topicSelect.value !== 'Vocab' || targetVocabWords.length === 0) return;
+            if (hasGrammarError) return;
+
+            let hasChanged = false;
+            targetVocabWords.forEach(item => {
+                if (!item.achieved) {
+                    const escaped = item.word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+                    if (regex.test(userTranscript)) {
+                        item.achieved = true;
+                        item.sentence = userTranscript;
+                        hasChanged = true;
+                        showToast(`⚡ Mission Achieved: Spoken "${item.word}"!`);
+                    }
+                }
+            });
+
+            if (hasChanged) {
+                updateVocabProgressBadge();
+                updateVocabDrawerList();
+            }
+        }
+
+        async function syncVocabToDashboard() {
+            parseVocabWords();
+            const words = targetVocabWords;
+
+            if (words.length === 0) {
+                showToast('Tambahkan kata vocab di Target Vocabulary terlebih dahulu', true);
+                vocabInput && vocabInput.focus();
+                return;
+            }
+
+            const icon = btnDashboardSync.querySelector('.material-symbols-outlined');
+            btnDashboardSync.disabled = true;
+            icon.classList.add('animation-spin');
+
+            try {
+                const payload = {
+                    user_id: DUMMY_USER_ID,
+                    session_id: sessionId,
+                    level: selectedLevel,
+                    topic: topicSelect.value,
+                    vocabulary_raw: vocabInput ? vocabInput.value.trim() : '',
+                    vocabulary: words.map(item => ({
+                        word: item.word,
+                        achieved: !!item.achieved,
+                        sentence: item.sentence || ''
+                    })),
+                    progress: {
+                        total: words.length,
+                        achieved: words.filter(w => w.achieved).length
+                    },
+                    synced_at: new Date().toISOString()
+                };
+
+                const response = await fetch(VOCAB_DASHBOARD_SYNC_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                const rawText = await response.text();
+                let data = null;
+                try {
+                    data = rawText ? JSON.parse(rawText) : null;
+                } catch (_) { }
+
+                if (!response.ok) {
+                    throw new Error(data?.error || `HTTP ${response.status}`);
+                }
+
+                if (data && data.success === false) {
+                    throw new Error(data.error || 'Sync failed');
+                }
+
+                const syncedCount = targetVocabWords.filter(w => w.achieved).length;
+                showToast(`${syncedCount} vocab berhasil disync ke dashboard! ✅`);
+
+                // Hapus kata yang sudah achieved (sudah mastered)
+                const remainingWords = targetVocabWords.filter(w => !w.achieved);
+                targetVocabWords = remainingWords;
+                if (vocabInput) vocabInput.value = remainingWords.map(w => w.word).join(', ');
+                updateVocabProgressBadge();
+                updateVocabDrawerList();
+                // Sembunyikan tombol kembali setelah sync
+                updateSyncButton();
+
+            } catch (err) {
+                console.error('Dashboard sync failed:', err);
+                showToast('Gagal sync ke dashboard: ' + err.message, true);
+            } finally {
+                icon.classList.remove('animation-spin');
+                btnDashboardSync.disabled = false;
+            }
+        }
+
+        btnDashboardSync.addEventListener('click', syncVocabToDashboard);
+
+        // ── Profile Avatar Dropdown ──────────────────────────────
+        const profileAvatar = document.getElementById('profileAvatar');
+        const profileDropdown = document.getElementById('profileDropdown');
+        const profileDropdownName = document.getElementById('profileDropdownName');
+
+        // Update avatar: coba avatar_url dari API, fallback ke ui-avatars.com
+        function updateProfileAvatar(name, avatarUrl) {
+            if (!name) return;
+            const displayName = name.trim();
+            const initials = displayName.split(/\s+/).map(w => w[0].toUpperCase()).slice(0, 2).join('');
+
+            // Update nama di dropdown header
+            if (profileDropdownName) profileDropdownName.textContent = displayName;
+
+            const imgEl = document.getElementById('profileAvatarImg');
+            const initialsEl = document.getElementById('profileAvatarInitials');
+
+            // Tentukan URL foto: pakai avatar_url jika ada, fallback ke ui-avatars
+            const photoUrl = avatarUrl
+                ? avatarUrl
+                : `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=4f8cff&color=fff&bold=true&size=80&rounded=true`;
+
+            if (imgEl) {
+                imgEl.src = photoUrl;
+                imgEl.style.display = 'block';
+                imgEl.onerror = () => {
+                    // Jika foto gagal load, tampilkan inisial
+                    imgEl.style.display = 'none';
+                    if (initialsEl) {
+                        initialsEl.textContent = initials;
+                        initialsEl.style.display = 'flex';
+                    }
+                };
+            }
+            if (initialsEl) {
+                initialsEl.textContent = initials;
+                initialsEl.style.display = 'none'; // tersembunyi selama img ada
+            }
+        }
+
+        if (profileAvatar) {
+            profileAvatar.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const isOpen = profileDropdown.classList.toggle('open');
+                profileAvatar.classList.toggle('open', isOpen);
+            });
+        }
+
+        // Tutup dropdown jika klik di luar
+        document.addEventListener('click', (e) => {
+            const wrap = document.getElementById('profileWrap');
+            if (profileDropdown && wrap && !wrap.contains(e.target)) {
+                profileDropdown.classList.remove('open');
+                profileAvatar && profileAvatar.classList.remove('open');
+            }
+        });
+
+        // Tutup dropdown saat salah satu menu diklik
+        document.querySelectorAll('.profile-menu-item').forEach(item => {
+            item.addEventListener('click', () => {
+                profileDropdown.classList.remove('open');
+                profileAvatar && profileAvatar.classList.remove('open');
+            });
+        });
+
+        // Inisialisasi saat load
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof loadUserProfile === 'function') {
+                loadUserProfile();
+            }
+        });
+
+    
+
+    // Attach external logout to Next.js router
+    const logoutBtn = Array.from(document.querySelectorAll('.profile-menu-item')).find(el => el.textContent.includes('Logout'));
+    if (logoutBtn) {
+       logoutBtn.addEventListener('click', (e) => {
+           e.preventDefault();
+           clearSession();
+           router.push('/login');
+       });
+    }
+
+  }, [router, clearSession]);
+
+  return (
+    <>
+      <style dangerouslySetInnerHTML={{ __html: `
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        :root {
+            --bg: #0d0f14;
+            --surface: #151820;
+            --surface2: #1c2030;
+            --border: #252a3a;
+            --accent: #4f8cff;
+            --accent2: #a78bfa;
+            --green: #34d399;
+            --red: #f87171;
+            --yellow: #fbbf24;
+            --text: #e8eaf2;
+            --muted: #6b7290;
+            --radius: 16px;
+            --sidebar-width: 280px;
+        }
+
+        html,
+        body {
+            height: 100%;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 15px;
+            line-height: 1.6;
+            overflow: hidden;
+        }
+
+        .app {
+            display: grid;
+            grid-template-columns: var(--sidebar-width) 1fr;
+            grid-template-rows: 100vh;
+            height: 100vh;
+            overflow: hidden;
+            transition: grid-template-columns 0.3s ease;
+            position: relative;
+        }
+
+        .app.sidebar-hidden {
+            grid-template-columns: 0 1fr;
+        }
+
+        .sidebar {
+            background: var(--surface);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 24px 18px;
+            gap: 16px;
+            /* Tighter gap for better vertical fit */
+            overflow-y: auto;
+            overflow-x: hidden;
+            transition: opacity 0.3s ease, padding 0.3s ease, width 0.3s ease;
+            white-space: nowrap;
+            position: relative;
+            z-index: 10;
+            pointer-events: auto;
+        }
+
+        .app.sidebar-hidden .sidebar {
+            opacity: 0;
+            padding: 24px 0;
+            pointer-events: none;
+            width: 0;
+        }
+
+        .logo {
+            font-family: 'Syne', sans-serif;
+            font-weight: 800;
+            font-size: 22px;
+            letter-spacing: -0.5px;
+            color: var(--text);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 4px;
+            flex-shrink: 0;
+        }
+
+        .logo-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 12px var(--accent);
+        }
+
+        .user-greeting-wrap {
+            margin-bottom: 2px;
+            flex-shrink: 0;
+        }
+
+        .user-greeting {
+            font-family: 'Syne', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text);
+            letter-spacing: -0.3px;
+            line-height: 1.3;
+        }
+
+        .user-greeting .user-greeting-name {
+            color: var(--accent);
+        }
+
+        .user-greeting.is-loading {
+            color: var(--muted);
+            font-weight: 600;
+        }
+
+        .sidebar-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .sidebar-section label,
+        #vocabInputContainer label {
+            display: block;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 1.2px;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        select,
+        input[type="text"] {
+            width: 100%;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            color: var(--text);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 14px;
+            padding: 10px 14px;
+            outline: none;
+            appearance: none;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        select:focus,
+        input[type="text"]:focus {
+            border-color: var(--accent);
+        }
+
+        #vocabInputContainer {
+            transition: all 0.3s ease;
+            overflow: hidden;
+            max-height: 400px;
+            /* Increased for content visibility */
+            opacity: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            padding-bottom: 4px;
+            flex-shrink: 0;
+        }
+
+        #vocabInputContainer.vocab-box-hidden {
+            display: none !important;
+            max-height: 0;
+            opacity: 0;
+            margin: 0;
+            padding: 0;
+            pointer-events: none;
+        }
+
+        #vocabInput {
+            cursor: text;
+        }
+
+        .btn-pull-dashboard {
+            background: var(--surface2);
+            border: 1px solid var(--accent);
+            color: var(--accent);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        .btn-pull-dashboard:hover:not(:disabled) {
+            background: rgba(79, 140, 255, 0.1);
+        }
+
+        .btn-pull-dashboard:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .manual-label {
+            font-size: 10px;
+            color: var(--muted);
+            text-transform: lowercase;
+            font-style: italic;
+            margin-top: 2px;
+        }
+
+        .level-pills {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .pill {
+            padding: 8px 4px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--surface2);
+            color: var(--muted);
+            font-size: 12px;
+            font-weight: 500;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .pill:hover {
+            border-color: var(--muted);
+        }
+
+        .pill.active {
+            background: var(--accent);
+            border-color: var(--accent);
+            color: #fff;
+        }
+
+        .btn-start {
+            width: 100%;
+            padding: 14px;
+            border-radius: 12px;
+            border: none;
+            background: var(--accent);
+            color: #fff;
+            font-family: 'Syne', sans-serif;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.2s;
+            letter-spacing: 0.3px;
+            position: relative;
+            margin-top: 4px;
+            flex-shrink: 0;
+        }
+
+        .btn-start:hover {
+            background: #3a7aee;
+            transform: translateY(-1px);
+        }
+
+        .btn-start:disabled {
+            background: var(--surface2);
+            color: var(--muted);
+            cursor: not-allowed;
+            transform: none;
+            animation: none !important;
+            box-shadow: none !important;
+        }
+
+        .pulse-start {
+            animation: pulse-start-btn 2s infinite ease-in-out;
+        }
+
+        @keyframes pulse-start-btn {
+            0% {
+                box-shadow: 0 0 0 0 rgba(79, 140, 255, 0.4);
+                transform: scale(1);
+            }
+
+            50% {
+                box-shadow: 0 0 0 10px rgba(79, 140, 255, 0);
+                transform: scale(1.02);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(79, 140, 255, 0);
+                transform: scale(1);
+            }
+        }
+
+        .stats {
+            margin-top: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            flex-shrink: 0;
+            padding-top: 10px;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            background: var(--surface2);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            transition: all 0.2s;
+        }
+
+        .stat-row.clickable {
+            cursor: pointer;
+        }
+
+        .stat-row.clickable:hover {
+            border-color: var(--accent);
+            background: rgba(79, 140, 255, 0.05);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .stat-value {
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            font-size: 15px;
+        }
+
+        .stat-value.green {
+            color: var(--green);
+        }
+
+        .stat-value.yellow {
+            color: var(--yellow);
+        }
+
+        .main {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg);
+            position: relative;
+            z-index: 5;
+        }
+
+        .topbar {
+            padding: 16px 28px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-shrink: 0;
+            background: var(--bg);
+            z-index: 20;
+        }
+
+        .sidebar-toggle {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--muted);
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 30;
+        }
+
+        .sidebar-toggle:hover {
+            color: var(--text);
+            border-color: var(--muted);
+        }
+
+        .session-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .session-badge {
+            padding: 5px 12px;
+            border-radius: 20px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            font-size: 12px;
+            color: var(--muted);
+        }
+
+        .session-badge.active {
+            background: rgba(79, 140, 255, 0.12);
+            border-color: rgba(79, 140, 255, 0.4);
+            color: var(--accent);
+        }
+
+        .topic-tag {
+            font-family: 'Syne', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        /* ── Profile Avatar ── */
+        .topbar-spacer {
+            flex: 1;
+        }
+
+        .profile-wrap {
+            position: relative;
+            flex-shrink: 0;
+        }
+
+        .profile-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), var(--accent2));
+            border: 2px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 16px;
+            font-weight: 700;
+            color: #fff;
+            font-family: 'Syne', sans-serif;
+            user-select: none;
+        }
+
+        .profile-avatar:hover {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.2);
+            transform: scale(1.05);
+        }
+
+        .profile-avatar.open {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 3px rgba(79, 140, 255, 0.2);
+        }
+
+        .profile-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
+            display: block;
+            pointer-events: none;
+        }
+
+        .profile-avatar-initials {
+            font-family: 'Syne', sans-serif;
+            font-size: 14px;
+            font-weight: 700;
+            color: #fff;
+            line-height: 1;
+            pointer-events: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+        }
+
+        .profile-dropdown {
+            position: absolute;
+            top: calc(100% + 10px);
+            right: 0;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            min-width: 200px;
+            padding: 8px;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+            z-index: 999;
+            opacity: 0;
+            transform: translateY(-8px) scale(0.97);
+            pointer-events: none;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+        }
+
+        .profile-dropdown.open {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+            pointer-events: auto;
+        }
+
+        .profile-dropdown-header {
+            padding: 8px 12px 10px;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 6px;
+        }
+
+        .profile-dropdown-name {
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--text);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .profile-dropdown-role {
+            font-size: 11px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        .profile-menu-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 9px 12px;
+            border-radius: 9px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text);
+            text-decoration: none;
+            transition: all 0.15s;
+            cursor: pointer;
+        }
+
+        .profile-menu-item:hover {
+            background: var(--surface2);
+            color: var(--accent);
+        }
+
+        .profile-menu-item .material-symbols-outlined {
+            font-size: 18px;
+            color: var(--muted);
+            transition: color 0.15s;
+        }
+
+        .profile-menu-item:hover .material-symbols-outlined {
+            color: var(--accent);
+        }
+
+        .chat-area {
+            flex: 1;
+            overflow-y: auto;
+            padding: 28px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            scroll-behavior: smooth;
+            background-image: radial-gradient(var(--border) 1px, transparent 0);
+            background-size: 40px 40px;
+            background-position: -19px -19px;
+        }
+
+        .empty-state {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            color: var(--muted);
+            text-align: center;
+        }
+
+        .empty-icon {
+            font-size: 48px;
+            opacity: 0.4;
+        }
+
+        .empty-state h3 {
+            font-family: 'Syne', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--text);
+            opacity: 0.5;
+        }
+
+        .empty-state p {
+            font-size: 13px;
+            max-width: 280px;
+        }
+
+        .message-row {
+            display: flex;
+            gap: 12px;
+            animation: fadeUp 0.3s ease;
+        }
+
+        @keyframes fadeUp {
+            from {
+                opacity: 0;
+                transform: translateY(12px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message-row.user {
+            flex-direction: row-reverse;
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+            flex-shrink: 0;
+        }
+
+        .avatar.ai {
+            background: rgba(79, 140, 255, 0.15);
+        }
+
+        .avatar.user {
+            background: rgba(167, 139, 250, 0.15);
+        }
+
+        .bubble-wrap {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            max-width: 70%;
+        }
+
+        .message-row.user .bubble-wrap {
+            align-items: flex-end;
+        }
+
+        .bubble {
+            padding: 12px 16px;
+            border-radius: 14px;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        .bubble.ai {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-top-left-radius: 4px;
+        }
+
+        .bubble.ai strong {
+            color: var(--accent);
+            font-weight: 700;
+        }
+
+        .bubble.user {
+            background: rgba(167, 139, 250, 0.12);
+            border: 1px solid rgba(167, 139, 250, 0.25);
+            border-top-right-radius: 4px;
+            color: #d8d4f5;
+        }
+
+        .bubble-time {
+            font-size: 11px;
+            color: var(--muted);
+            padding: 0 4px;
+        }
+
+        .pattern-card {
+            background: rgba(79, 140, 255, 0.06);
+            border: 1px solid rgba(79, 140, 255, 0.2);
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .pattern-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .pattern-body {
+            font-size: 14px;
+            font-weight: 600;
+            color: #fff;
+            background: var(--surface2);
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        .correction-card {
+            background: rgba(251, 191, 36, 0.06);
+            border: 1px solid rgba(251, 191, 36, 0.2);
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .correction-title {
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.8px;
+            text-transform: uppercase;
+            color: var(--yellow);
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .correction-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            font-size: 13px;
+        }
+
+        .correction-row .tag {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 7px;
+            border-radius: 4px;
+            flex-shrink: 0;
+            margin-top: 2px;
+        }
+
+        .tag.wrong {
+            background: rgba(248, 113, 113, 0.15);
+            color: var(--red);
+        }
+
+        .tag.right {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--green);
+        }
+
+        .tag.why {
+            background: rgba(79, 140, 255, 0.15);
+            color: var(--accent);
+        }
+
+        .correction-text {
+            color: var(--text);
+            line-height: 1.5;
+        }
+
+        .recorder-area {
+            padding: 20px 28px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            flex-shrink: 0;
+            background: var(--bg);
+            z-index: 20;
+        }
+
+        .record-btn {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            border: 2px solid var(--border);
+            background: var(--surface2);
+            color: var(--muted);
+            font-size: 22px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 30;
+            pointer-events: auto;
+        }
+
+        .record-btn:hover:not(:disabled) {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: rgba(79, 140, 255, 0.08);
+        }
+
+        .record-btn:not(.recording):not(:disabled) {
+            animation: glowPulse 2s infinite;
+        }
+
+        .record-btn.recording {
+            background: rgba(248, 113, 113, 0.12);
+            border-color: var(--red);
+            color: var(--red);
+            box-shadow: 0 0 15px rgba(248, 113, 113, 0.3);
+            animation: pulse 1.2s ease-in-out infinite;
+        }
+
+        .record-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            animation: none;
+        }
+
+        @keyframes glowPulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(79, 140, 255, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 15px rgba(79, 140, 255, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(79, 140, 255, 0);
+            }
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 rgba(248, 113, 113, 0.4);
+            }
+
+            50% {
+                box-shadow: 0 0 0 10px rgba(248, 113, 113, 0);
+            }
+        }
+
+        .recorder-info {
+            flex: 0 0 auto;
+            text-align: center;
+        }
+
+        .recorder-status {
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text);
+        }
+
+        .recorder-hint {
+            font-size: 12px;
+            color: var(--muted);
+            margin-top: 2px;
+        }
+
+        .wave-bars {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            height: 32px;
+            width: 80px;
+            justify-content: space-between;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .wave-bars.active {
+            opacity: 1;
+        }
+
+        .bar {
+            width: 4px;
+            background: var(--red);
+            border-radius: 2px;
+            height: 4px;
+            transition: height 0.1s ease;
+        }
+
+        .typing {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 12px 16px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            border-top-left-radius: 4px;
+            width: fit-content;
+        }
+
+        .typing span {
+            width: 7px;
+            height: 7px;
+            background: var(--muted);
+            border-radius: 50%;
+            animation: blink 1.2s ease-in-out infinite;
+        }
+
+        .typing span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        .tts-badge {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 14px;
+            border-radius: 14px;
+            font-size: 13px;
+            font-weight: 500;
+            width: fit-content;
+            animation: fadeUp 0.3s ease;
+            border: 1px solid;
+        }
+
+        .tts-badge--correction {
+            background: rgba(251, 191, 36, 0.08);
+            border-color: rgba(251, 191, 36, 0.3);
+            color: var(--yellow);
+            margin-top: 4px;
+        }
+
+        .tts-badge--conversation {
+            background: rgba(79, 140, 255, 0.08);
+            border-color: rgba(79, 140, 255, 0.3);
+            color: var(--accent);
+        }
+
+        .tts-icon {
+            font-size: 16px;
+        }
+
+        .tts-wave {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            margin-left: 4px;
+        }
+
+        .tts-wave span {
+            display: block;
+            width: 3px;
+            border-radius: 2px;
+            animation: ttsWave 0.7s ease-in-out infinite;
+        }
+
+        .tts-badge--correction .tts-wave span {
+            background: var(--yellow);
+        }
+
+        .tts-badge--conversation .tts-wave span {
+            background: var(--accent);
+        }
+
+        .tts-wave span:nth-child(1) {
+            height: 8px;
+            animation-delay: 0s;
+        }
+
+        .tts-wave span:nth-child(2) {
+            height: 14px;
+            animation-delay: 0.1s;
+        }
+
+        .tts-wave span:nth-child(3) {
+            height: 20px;
+            animation-delay: 0.2s;
+        }
+
+        .tts-wave span:nth-child(4) {
+            height: 12px;
+            animation-delay: 0.15s;
+        }
+
+        @keyframes ttsWave {
+
+            0%,
+            100% {
+                transform: scaleY(0.5);
+                opacity: 0.6;
+            }
+
+            50% {
+                transform: scaleY(1.3);
+                opacity: 1;
+            }
+        }
+
+        @keyframes blink {
+
+            0%,
+            80%,
+            100% {
+                transform: scale(0.8);
+                opacity: 0.4;
+            }
+
+            40% {
+                transform: scale(1.1);
+                opacity: 1;
+            }
+        }
+
+        .chat-area::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .chat-area::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        .chat-area::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 18px;
+            font-size: 13px;
+            color: var(--text);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            transform: translateY(80px);
+            opacity: 0;
+            transition: all 0.3s;
+            z-index: 5000;
+            pointer-events: none;
+        }
+
+        .toast.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        .toast.error {
+            border-color: rgba(248, 113, 113, 0.4);
+            color: var(--red);
+        }
+
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(8px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .modal-overlay.open {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .modal-content {
+            background: var(--surface);
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            border-radius: var(--radius);
+            border: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+            box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
+            position: relative;
+        }
+
+        .modal-overlay.open .modal-content {
+            transform: scale(1);
+        }
+
+        .modal-header {
+            padding: 24px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            position: relative;
+            z-index: 2;
+        }
+
+        .modal-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .modal-close {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 20px;
+            line-height: 1;
+            position: relative;
+            z-index: 100;
+        }
+
+        .modal-close:hover {
+            background: var(--border);
+            color: #fff;
+        }
+
+        .modal-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .modal-empty {
+            text-align: center;
+            padding: 40px;
+            color: var(--muted);
+            font-size: 14px;
+        }
+
+        .modal-body::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .modal-body::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        .correction-item {
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .correction-item:last-child {
+            border-bottom: none;
+        }
+
+        .vocab-drawer {
+            position: fixed;
+            top: 0;
+            right: 0;
+            width: 340px;
+            height: 100vh;
+            background: var(--surface);
+            border-left: 1px solid var(--border);
+            box-shadow: -10px 0 40px rgba(0, 0, 0, 0.6);
+            transform: translateX(100%);
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+        }
+
+        .vocab-drawer.open {
+            transform: translateX(0);
+        }
+
+        .vocab-drawer-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 20px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .vocab-drawer-title {
+            font-family: 'Syne', sans-serif;
+            font-size: 18px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .vocab-list-container {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding-right: 4px;
+        }
+
+        .vocab-list-container::-webkit-scrollbar {
+            width: 4px;
+        }
+
+        .vocab-list-container::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        .vocab-mission-item {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 12px 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            transition: all 0.2s ease;
+        }
+
+        .vocab-mission-item.achieved {
+            border-color: rgba(52, 211, 153, 0.3);
+            background: rgba(52, 211, 153, 0.03);
+        }
+
+        .vocab-item-word-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .vocab-item-word {
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            font-size: 15px;
+            color: var(--text);
+        }
+
+        .vocab-mission-item.achieved .vocab-item-word {
+            color: var(--green);
+        }
+
+        .vocab-item-status {
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 2px 8px;
+            border-radius: 20px;
+            background: var(--border);
+            color: var(--muted);
+        }
+
+        .vocab-mission-item.achieved .vocab-item-status {
+            background: rgba(52, 211, 153, 0.15);
+            color: var(--green);
+        }
+
+        .vocab-item-sentence {
+            font-size: 12px;
+            color: var(--muted);
+            font-style: italic;
+            line-height: 1.4;
+            border-left: 2px solid var(--border);
+            padding-left: 8px;
+        }
+
+        .vocab-mission-item.achieved .vocab-item-sentence {
+            border-left-color: var(--green);
+            color: var(--text);
+        }
+
+        .btn-dashboard-sync {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: 1px solid var(--green);
+            background: rgba(52, 211, 153, 0.1);
+            color: var(--green);
+            font-family: 'DM Sans', sans-serif;
+            font-size: 13px;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            margin-top: auto;
+            transition: all 0.3s ease;
+            box-shadow: 0 0 12px rgba(52, 211, 153, 0.15);
+            /* Hidden by default — muncul hanya saat ada achieved vocab */
+            opacity: 0;
+            transform: translateY(6px);
+            pointer-events: none;
+        }
+
+        .btn-dashboard-sync.sync-ready {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        .btn-dashboard-sync:hover:not(:disabled) {
+            background: rgba(52, 211, 153, 0.2);
+            box-shadow: 0 0 20px rgba(52, 211, 153, 0.25);
+            transform: translateY(-1px);
+        }
+
+        .btn-dashboard-sync:active:not(:disabled) {
+            transform: translateY(0);
+        }
+
+        .btn-dashboard-sync:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        .animation-spin {
+            animation: spin 1s linear infinite;
+        }
+
+        /* ── Pull Preview ── */
+        .pull-preview {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+            margin-top: 2px;
+        }
+
+        .pull-preview.visible {
+            display: flex;
+        }
+
+        .pull-preview-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .pull-preview-label {
+            font-size: 10px;
+            font-weight: 600;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--muted);
+        }
+
+        .pull-count-badge {
+            font-size: 10px;
+            font-weight: 700;
+            color: var(--accent);
+            background: rgba(79, 140, 255, 0.12);
+            border: 1px solid rgba(79, 140, 255, 0.3);
+            border-radius: 20px;
+            padding: 1px 8px;
+        }
+
+        .pull-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 5px;
+        }
+
+        .pull-chip {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-size: 12px;
+            color: var(--text);
+            font-weight: 500;
+            transition: all 0.15s;
+        }
+
+        .pull-chip .chip-level {
+            font-size: 9px;
+            font-weight: 700;
+            color: var(--accent);
+            background: rgba(79, 140, 255, 0.1);
+            border-radius: 3px;
+            padding: 1px 4px;
+        }
+
+        .pull-chip.removed {
+            opacity: 0;
+            transform: scale(0.8);
+            pointer-events: none;
+        }
+
+        .pull-chip .chip-remove {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: transparent;
+            border: none;
+            color: var(--muted);
+            cursor: pointer;
+            font-size: 11px;
+            line-height: 1;
+            padding: 0;
+            margin-left: 2px;
+            transition: all 0.15s;
+            flex-shrink: 0;
+        }
+
+        .pull-chip .chip-remove:hover {
+            background: rgba(248, 113, 113, 0.15);
+            color: var(--red);
+        }
+
+        .pull-chips-scroll {
+            max-height: 140px;
+            overflow-y: auto;
+            overflow-x: hidden;
+            padding-right: 2px;
+        }
+
+        .pull-chips-scroll::-webkit-scrollbar {
+            width: 3px;
+        }
+
+        .pull-chips-scroll::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 10px;
+        }
+
+        .btn-use-pulled {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--green);
+            background: rgba(52, 211, 153, 0.08);
+            color: var(--green);
+            font-size: 12px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+            letter-spacing: 0.3px;
+        }
+
+        .btn-use-pulled:hover {
+            background: rgba(52, 211, 153, 0.15);
+        }
+
+        .btn-discard-pulled {
+            width: 100%;
+            padding: 5px;
+            background: none;
+            border: none;
+            color: var(--muted);
+            font-size: 11px;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: underline;
+            transition: color 0.2s;
+        }
+
+        .btn-discard-pulled:hover {
+            color: var(--red);
+        }
+    ` }} />
+      
+    <div className="app" id="app">
+        <aside className="sidebar">
+            <div className="logo">
+                <div className="logo-dot"></div>
+                SpeakUp
+            </div>
+            <div className="user-greeting-wrap">
+                <p className="user-greeting is-loading" id="userGreeting">Hi, …</p>
+            </div>
+            <div className="sidebar-section">
+                <label>Topic</label>
+                <select id="topicSelect">
+                    <option value="Daily Life">🌅 Daily Life</option>
+                    <option value="Food &amp; Cooking">🍜 Food &amp; Cooking</option>
+                    <option value="Travel &amp; Places">✈️ Travel &amp; Places</option>
+                    <option value="Work &amp; Career">💼 Work &amp; Career</option>
+                    <option value="Hobbies &amp; Interests">🎨 Hobbies &amp; Interests</option>
+                    <option value="Technology">💻 Technology</option>
+                    <option value="Movies &amp; Entertainment">🎬 Movies &amp; Entertainment</option>
+                    <option value="Health &amp; Fitness">🏃 Health &amp; Fitness</option>
+                    <option value="Family &amp; Relationships">❤️ Family &amp; Relationships</option>
+                    <option value="Current Events">🌍 Current Events</option>
+                    <option value="Vocab">📖 Vocab</option>
+                    <option value="Quiz">📝 Quiz</option>
+                </select>
+            </div>
+            
+            <div className="vocab-box-hidden" hidden id="vocabInputContainer">
+                <label htmlFor="vocabInput">Target Vocabulary</label>
+                <button className="btn-pull-dashboard" id="btnPullDashboard" type="button">
+                    <span className="material-symbols-outlined" style={{"fontSize":"16px"}}>download</span>
+                    Pull from Dashboard
+                </button>
+
+                
+                <div className="pull-preview" id="pullPreview">
+                    <div className="pull-preview-header">
+                        <span className="pull-preview-label">Unmastered Vocab</span>
+                        <span className="pull-count-badge" id="pullCountBadge">0 kata</span>
+                    </div>
+                    <div className="pull-chips-scroll">
+                        <div className="pull-chips" id="pullChips"></div>
+                    </div>
+                    <button className="btn-use-pulled" id="btnUsePulled" type="button">
+                        <span className="material-symbols-outlined" style={{"fontSize":"15px"}}>check_circle</span>
+                        Gunakan vocab ini
+                    </button>
+                    <button className="btn-discard-pulled" id="btnDiscardPulled" type="button">Batalkan</button>
+                </div>
+
+                <span className="manual-label">atau ketik manual:</span>
+                <input autocomplete="off" id="vocabInput" placeholder="e.g. ubiquitous, plethora" type="text" />
+            </div>
+            <div className="sidebar-section">
+                <label>Level</label>
+                <div className="level-pills">
+                    <div className="pill active" data-level="A1">A1</div>
+                    <div className="pill" data-level="A2">A2</div>
+                    <div className="pill" data-level="B1">B1</div>
+                    <div className="pill" data-level="B2">B2</div>
+                    <div className="pill" data-level="C1">C1</div>
+                    <div className="pill" data-level="C2">C2</div>
+                </div>
+            </div>
+            <button className="btn-start pulse-start" id="btnStart">Start Session</button>
+            <div className="stats">
+                <div className="stat-row clickable" id="statCorrectionsBtn" title="View Correction History">
+                    <span className="stat-label">Corrections</span>
+                    <span className="stat-value yellow" id="statCorrections">0</span>
+                </div>
+                <div className="stat-row clickable" id="statAnalysisBtn" title="View Performance Analysis">
+                    <span className="stat-label">Analysis</span>
+                    <span className="stat-value" style={{"color":"var(--accent2)"}}>Detail</span>
+                </div>
+                <div className="stat-row clickable" id="vocabDrawerBtn" style={{"display":"none"}}
+                    title="View Vocab Mission Tracker">
+                    <span className="stat-label">⚡ Vocab Mission</span>
+                    <span className="stat-value green" id="vocabDrawerProgress">0/0</span>
+                </div>
+                <div className="stat-row">
+                    <span className="stat-label">Messages</span>
+                    <span className="stat-value" id="statMessages">0</span>
+                </div>
+            </div>
+        </aside>
+        <main className="main">
+            <div className="topbar">
+                <button className="sidebar-toggle" id="sidebarToggle" title="Hide Sidebar">
+                    <span className="material-symbols-outlined" id="toggleIcon">chevron_left</span>
+                </button>
+                <div className="session-info">
+                    <span className="session-badge" id="sessionBadge">No session</span>
+                    <span className="topic-tag" id="topicTag">Choose a topic to start</span>
+                </div>
+                <div className="topbar-spacer"></div>
+                
+                <div className="profile-wrap" id="profileWrap">
+                    <div className="profile-avatar" id="profileAvatar" title="Account menu">
+                        <img id="profileAvatarImg" alt="Profile photo"
+                            style={{"display":"none","width":"100%","height":"100%","objectFit":"cover","borderRadius":"50%"}}
+                            onerror="this.style.display='none'; document.getElementById('profileAvatarInitials').style.display='flex';" />
+                        <span className="profile-avatar-initials" id="profileAvatarInitials"
+                            style={{"display":"flex","alignItems":"center","justifyContent":"center","width":"100%","height":"100%"}}>U</span>
+                    </div>
+                    <div className="profile-dropdown" id="profileDropdown">
+                        <div className="profile-dropdown-header">
+                            <div className="profile-dropdown-name" id="profileDropdownName">User</div>
+                            <div className="profile-dropdown-role">English Learner</div>
+                        </div>
+                        <a className="profile-menu-item" href="/dashboard/profile">
+                            <span className="material-symbols-outlined">dashboard</span>
+                            Visit to Dashboard
+                        </a>
+                        <a className="profile-menu-item" href="/dashboard/vocabulary">
+                            <span className="material-symbols-outlined">menu_book</span>
+                            Vocabulary Lab
+                        </a>
+                        <a className="profile-menu-item" href="/dashboard/corrections">
+                            <span className="material-symbols-outlined">auto_fix_high</span>
+                            Correction
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div className="chat-area" id="chatArea">
+                <div className="empty-state" id="emptyState">
+                    <div className="empty-icon">🎙️</div>
+                    <h3>Ready to practice?</h3>
+                    <p>Choose a topic and level, then click <strong>Start Session</strong> to begin.</p>
+                </div>
+            </div>
+            <div className="recorder-area">
+                <button className="record-btn" disabled id="recordBtn" title="Record">
+                    🎤
+                </button>
+                <div className="recorder-info">
+                    <div className="recorder-status" id="recorderStatus">Start a session first</div>
+                    <div className="recorder-hint" id="recorderHint">Select topic &amp; level, then click Start Session
+                    </div>
+                </div>
+                <div className="wave-bars" id="waveBars">
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                    <div className="bar"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+    
+    <div className="modal-overlay" id="correctionsModal">
+        <div className="modal-content">
+            <div className="modal-header">
+                <h2 className="modal-title">Correction History</h2>
+                <button aria-label="Close modal" className="modal-close" data-close="correctionsModal"
+                    type="button">×</button>
+            </div>
+            <div className="modal-body" id="modalBody">
+                <div className="modal-empty">No corrections yet.</div>
+            </div>
+        </div>
+    </div>
+    <div className="modal-overlay" id="analysisModal">
+        <div className="modal-content">
+            <div className="modal-header">
+                <h2 className="modal-title">Speaking Analysis</h2>
+                <button aria-label="Close modal" className="modal-close" data-close="analysisModal" type="button">×</button>
+            </div>
+            <div className="modal-body">
+                <div style={{"display":"grid","gridTemplateColumns":"1fr 1fr","gap":"16px"}}>
+                    <div className="correction-card"
+                        style={{"background":"rgba(79, 140, 255, 0.06)","borderColor":"rgba(79, 140, 255, 0.2)"}}>
+                        <div className="pattern-title" style={{"color":"var(--accent)"}}>🌊 Fluency</div>
+                        <div className="stat-value" id="analysisFluency" style={{"marginTop":"4px"}}>--</div>
+                    </div>
+                    <div className="correction-card"
+                        style={{"background":"rgba(167, 139, 250, 0.06)","borderColor":"rgba(167, 139, 250, 0.2)"}}>
+                        <div className="pattern-title" style={{"color":"var(--accent2)"}}>📚 Vocabulary</div>
+                        <div className="stat-value" id="analysisVocab" style={{"marginTop":"4px"}}>--</div>
+                    </div>
+                    <div className="correction-card"
+                        style={{"background":"rgba(251, 191, 36, 0.06)","borderColor":"rgba(251, 191, 36, 0.2)"}}>
+                        <div className="pattern-title" style={{"color":"var(--yellow)"}}>✍️ Grammar</div>
+                        <div className="stat-value" id="analysisGrammar" style={{"marginTop":"4px"}}>--</div>
+                    </div>
+                    <div className="correction-card"
+                        style={{"background":"rgba(52, 211, 153, 0.06)","borderColor":"rgba(52, 211, 153, 0.2)"}}>
+                        <div className="pattern-title" style={{"color":"var(--green)"}}>🗣️ Pronunciation</div>
+                        <div className="stat-value" id="analysisPronunciation" style={{"marginTop":"4px"}}>--</div>
+                    </div>
+                </div>
+                <div className="correction-card" style={{"marginTop":"8px","textAlign":"center","background":"var(--surface2)"}}>
+                    <div className="pattern-title" style={{"justifyContent":"center"}}>🏆 Overall CEFR Level</div>
+                    <div className="stat-value" id="analysisOverall"
+                        style={{"fontSize":"24px","color":"var(--accent)","marginTop":"8px"}}>--</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div className="vocab-drawer" id="vocabDrawer">
+        <div className="vocab-drawer-header">
+            <div className="vocab-drawer-title">
+                <span className="material-symbols-outlined" style={{"color":"var(--accent)"}}>target</span>
+                Vocab Mission
+            </div>
+            <button className="modal-close" id="closeVocabDrawerBtn" type="button">×</button>
+        </div>
+        <div className="vocab-list-container" id="vocabDrawerList">
+            <div className="modal-empty">Input target vocabulary in the left box to begin.</div>
+        </div>
+        <button className="btn-dashboard-sync" id="btnDashboardSync" title="Sync achieved vocabulary to dashboard"
+            type="button">
+            <span className="material-symbols-outlined" style={{"fontSize":"18px"}}>cloud_upload</span>
+            <span id="btnSyncLabel">Sync to Dashboard</span>
+        </button>
+    </div>
+    <div className="toast" id="toast">Message here</div>
+    
+
+    </>
+  );
+}
