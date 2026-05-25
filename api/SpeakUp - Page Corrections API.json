@@ -1,0 +1,310 @@
+{
+  "name": "SpeakUp - Page Corrections API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "OPTIONS",
+        "path": "corrections/list",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "5c2ba9f6-e5c8-4452-ba23-0e4d02934e88",
+      "name": "CORS: OPTIONS /corrections/list",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        -64
+      ],
+      "webhookId": "cors-corrections-001"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "=\"{}\"",
+        "options": {
+          "responseCode": 204,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              },
+              {
+                "name": "Access-Control-Max-Age",
+                "value": "86400"
+              }
+            ]
+          }
+        }
+      },
+      "id": "405703ca-a25b-4c74-b760-154b933a8350",
+      "name": "CORS: Respond 204",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        176,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "corrections/list",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "565230af-c3fc-466f-8672-35a87c9261c0",
+      "name": "Webhook: POST /corrections/list",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -112,
+        144
+      ],
+      "webhookId": "corrections-list-001"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-corr-001",
+              "leftValue": "={{ $json.body.user_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b9175b23-277a-4307-89f8-75ef6a16c29b",
+      "name": "Validate: user_id exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        128,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const userId = $('Webhook: POST /corrections/list').first().json.body.user_id;\nreturn [{ json: { user_id: userId } }];\n"
+      },
+      "id": "fe13a9db-7a0f-4bdc-a1bd-5208ba155090",
+      "name": "Set: user_id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        384,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  u.id           AS user_id,\n  u.name         AS user_name,\n  u.level        AS user_level,\n  u.avatar_url   AS user_avatar,\n  c.id           AS correction_id,\n  c.wrong_text,\n  c.correct_text,\n  c.reason,\n  c.topic,\n  c.created_at,\n  s.topic        AS session_topic,\n  v.vocab_word   AS vocab_word,\n  -- Stats via window functions (no separate query needed)\n  COUNT(*)                                              OVER() AS total_corrections,\n  COUNT(*) FILTER (WHERE c.topic ILIKE '%grammar%')    OVER() AS grammar_count,\n  COUNT(*) FILTER (WHERE c.topic ILIKE '%vocab%')      OVER() AS vocab_count,\n  COUNT(*) FILTER (WHERE c.topic ILIKE '%syntax%')     OVER() AS syntax_count\nFROM public.users u\nINNER JOIN public.corrections c ON c.user_id = u.id\nLEFT  JOIN public.sessions s    ON s.id = c.session_id\nLEFT  JOIN public.vocabularies v ON v.id = c.vocabulary_id\nWHERE u.id = '{{ $json.user_id }}'\nORDER BY c.created_at DESC\nLIMIT 200;",
+        "options": {}
+      },
+      "id": "27269158-5a60-4975-ac9b-b0e5fbbf1e1a",
+      "name": "Postgres: Get Corrections",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        624,
+        128
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "Smbm5jUOReBn9ZeS",
+          "name": "Postgres account English AI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst userId = $('Set: user_id').first().json.user_id;\nconst first  = items.length > 0 ? items[0].json : null;\n\n// User\nconst user = first ? {\n  id:         first.user_id,\n  name:       first.user_name,\n  level:      first.user_level,\n  avatar_url: first.user_avatar || null\n} : { id: userId, name: 'Learner', level: '—', avatar_url: null };\n\n// Stats\nconst total    = first ? parseInt(first.total_corrections || 0) : 0;\nconst grammar  = first ? parseInt(first.grammar_count    || 0) : 0;\nconst vocab    = first ? parseInt(first.vocab_count      || 0) : 0;\nconst syntax   = first ? parseInt(first.syntax_count     || 0) : 0;\n\n// Determine most improved / needs focus from counts\nconst cats = [\n  { name: 'Grammar',    count: grammar },\n  { name: 'Vocabulary', count: vocab   },\n  { name: 'Syntax',     count: syntax  }\n];\ncats.sort(function(a, b) { return b.count - a.count; });\n\nconst needsFocus   = cats[0].name;  // most errors = needs focus\nconst mostImproved = cats[cats.length - 1].name; // least errors = most improved\n\n// Mastery = inverse of error ratio (simple heuristic)\nconst masteryPct   = total > 0 ? Math.max(0, Math.round(100 - (total / Math.max(total, 50)) * 40)) : 100;\nconst accuracyPct  = total > 0 ? Math.max(60, Math.round(100 - (total * 0.8)))  : 100;\n\nconst stats = {\n  total_corrections: total,\n  grammar_count:     grammar,\n  vocab_count:       vocab,\n  syntax_count:      syntax,\n  most_improved:     mostImproved,\n  needs_focus:       needsFocus,\n  mastery_pct:       Math.min(masteryPct, 99),\n  accuracy_pct:      Math.min(accuracyPct, 99)\n};\n\n// Corrections list\nconst corrections = items.map(function(item) {\n  const r = item.json;\n  return {\n    id:           r.correction_id,\n    wrong_text:   r.wrong_text,\n    correct_text: r.correct_text,\n    reason:       r.reason       || '',\n    topic:        r.topic        || r.session_topic || '',\n    vocab_word:   r.vocab_word   || null,\n    user_level:   r.user_level   || '',\n    created_at:   r.created_at   || null\n  };\n});\n\nreturn [{ json: { user, stats, corrections } }];\n"
+      },
+      "id": "f2195efd-f953-4406-b803-ce040f2a4a40",
+      "name": "Code: Build Response Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "d73ee30b-f1fa-4bd0-904c-7e2e8ed0fde9",
+      "name": "Response: 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1088,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: true, message: 'user_id is required', code: 400 }) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "ade97467-ab0a-4fab-848e-43adc52d4fea",
+      "name": "Response: 400 Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        384,
+        336
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CORS: OPTIONS /corrections/list": {
+      "main": [
+        [
+          {
+            "node": "CORS: Respond 204",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: POST /corrections/list": {
+      "main": [
+        [
+          {
+            "node": "Validate: user_id exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate: user_id exists?": {
+      "main": [
+        [
+          {
+            "node": "Set: user_id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response: 400 Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set: user_id": {
+      "main": [
+        [
+          {
+            "node": "Postgres: Get Corrections",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres: Get Corrections": {
+      "main": [
+        [
+          {
+            "node": "Code: Build Response Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Build Response Payload": {
+      "main": [
+        [
+          {
+            "node": "Response: 200 OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "6901bf68-3c4c-4531-b278-c88b3a93873b",
+  "meta": {
+    "instanceId": "0bc038e49b07af2e3e858246c7c482b54ba66879f695b1ba1f1900faa8f7d141"
+  },
+  "id": "R2TKjwt8ICmZJXZV",
+  "tags": []
+}

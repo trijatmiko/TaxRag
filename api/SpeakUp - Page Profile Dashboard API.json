@@ -1,0 +1,343 @@
+{
+  "name": "SpeakUp - Page Profile Dashboard API",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "OPTIONS",
+        "path": "dashboard/profile",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c81bff4c-01b0-4897-a239-d173eedf9a62",
+      "name": "CORS: OPTIONS /dashboard/profile",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        -64
+      ],
+      "webhookId": "cors-profile-001"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "=\"{}\"",
+        "options": {
+          "responseCode": 204,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              },
+              {
+                "name": "Access-Control-Max-Age",
+                "value": "86400"
+              }
+            ]
+          }
+        }
+      },
+      "id": "1c2bd2ed-2dcc-4495-989c-c81df69fce23",
+      "name": "CORS: Respond 204",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        144,
+        -64
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "dashboard/profile",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "8a1288d4-7da4-4a30-a4c5-668e141af378",
+      "name": "Webhook: POST /dashboard/profile",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -144,
+        144
+      ],
+      "webhookId": "profile-001"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "cond-profile-001",
+              "leftValue": "={{ $json.body.user_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "63dc64a8-0a05-4297-a4b9-042cd36a5248",
+      "name": "Validate: user_id exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        96,
+        144
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const userId = $('Webhook: POST /dashboard/profile').first().json.body.user_id;\nreturn [{ json: { user_id: userId } }];\n"
+      },
+      "id": "fef71a1d-5ebf-4441-88b5-fb8ce8d68623",
+      "name": "Set: user_id",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        336,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  u.id          AS user_id,\n  u.name        AS user_name,\n  u.level       AS user_level,\n  u.avatar_url  AS user_avatar,\n  u.created_at  AS member_since,\n  -- Stats: total messages\n  (SELECT COUNT(*) FROM public.conversations c WHERE c.user_id = u.id)          AS total_messages,\n  -- Stats: total corrections\n  (SELECT COUNT(*) FROM public.corrections co WHERE co.user_id = u.id)          AS total_corrections,\n  -- Stats: words mastered\n  (SELECT COUNT(*) FROM public.user_vocabularies uv WHERE uv.user_id = u.id AND uv.is_mastered = true) AS words_mastered,\n  -- Stats: total vocab collected\n  (SELECT COUNT(*) FROM public.user_vocabularies uv WHERE uv.user_id = u.id)    AS total_vocabs,\n  -- Stats: total sessions\n  (SELECT COUNT(*) FROM public.sessions s WHERE s.user_id = u.id)               AS total_sessions\nFROM public.users u\nWHERE u.id = '{{ $json.user_id }}'\nLIMIT 1;",
+        "options": {}
+      },
+      "id": "00783885-f2ae-4545-ae31-9b7b83bac414",
+      "name": "Postgres: Get User & Stats",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        576,
+        128
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "Smbm5jUOReBn9ZeS",
+          "name": "Postgres account English AI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  uv.is_mastered,\n  v.id           AS vocab_id,\n  v.vocab_word   AS word,\n  v.definition,\n  v.part_of_speech AS type,\n  v.level        AS vocab_level,\n  uv.created_at  AS learned_at\nFROM public.user_vocabularies uv\nINNER JOIN public.vocabularies v ON v.id = uv.vocabulary_id\nWHERE uv.user_id = '{{ $('Set: user_id').first().json.user_id }}'\nORDER BY uv.created_at DESC\nLIMIT 20;",
+        "options": {}
+      },
+      "id": "c067f0b8-53f1-4861-8e73-9db10206a086",
+      "name": "Postgres: Get Vocabularies",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        832,
+        128
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "Smbm5jUOReBn9ZeS",
+          "name": "Postgres account English AI"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const userRow  = $('Postgres: Get User & Stats').first()?.json || {};\nconst vocabRows = $('Postgres: Get Vocabularies').all();\nconst userId    = $('Set: user_id').first().json.user_id;\n\n// ── User ─────────────────────────────────────────────\nconst levelMap = { A1:'Beginner', A2:'Elementary', B1:'Intermediate', B2:'Upper Intermediate', C1:'Advanced', C2:'Mastery' };\nconst rawLevel = (userRow.user_level || 'B1').toUpperCase();\n\nconst user = {\n  id:          userRow.user_id   || userId,\n  name:        userRow.user_name || 'Learner',\n  level:       rawLevel,\n  description: levelMap[rawLevel] || rawLevel,\n  avatar_url:  userRow.user_avatar || null,\n  member_since: userRow.member_since || null\n};\n\n// ── Stats ─────────────────────────────────────────────\nconst stats = {\n  totalMessages:    parseInt(userRow.total_messages   || 0),\n  totalCorrections: parseInt(userRow.total_corrections || 0),\n  wordsMastered:    parseInt(userRow.words_mastered    || 0),\n  totalVocabs:      parseInt(userRow.total_vocabs      || 0),\n  totalSessions:    parseInt(userRow.total_sessions    || 0)\n};\n\n// ── CEFR Pathway ─────────────────────────────────────\nconst cefrOrder = ['A1','A2','B1','B2','C1','C2'];\nconst cefrNames = { A1:'Beginner', A2:'Elementary', B1:'Intermediate', B2:'Upper Intermediate', C1:'Advanced', C2:'Mastery' };\nconst currentIdx = cefrOrder.indexOf(rawLevel);\n\nconst cefr = cefrOrder.map(function(lvl, idx) {\n  if (idx < currentIdx) {\n    return { level: lvl, name: cefrNames[lvl], status: 'completed', date: 'Completed' };\n  } else if (idx === currentIdx) {\n    // Progress heuristic: messages toward next milestone (every 100 messages = 100%)\n    const progress = Math.min(Math.round((stats.totalMessages % 100)), 99);\n    return {\n      level: lvl,\n      name: cefrNames[lvl],\n      status: 'current',\n      progress: progress,\n      xp: stats.totalMessages + ' messages · ' + stats.wordsMastered + ' words mastered'\n    };\n  } else {\n    return { level: lvl, name: cefrNames[lvl], status: 'locked' };\n  }\n});\n\n// ── Vocabs ────────────────────────────────────────────\nconst vocabs = vocabRows.map(function(item) {\n  const r = item.json;\n  const mastered = r.is_mastered === true || r.is_mastered === 'true';\n  return {\n    word:        r.word,\n    definition:  r.definition  || '',\n    type:        r.type        || 'WORD',\n    vocab_level: r.vocab_level || '',\n    mastered:    mastered,\n    status:      mastered ? 'Perfect Recall' : 'Needs practice'\n  };\n});\n\nreturn [{ json: { user, stats, cefr, vocabs } }];\n"
+      },
+      "id": "05835776-c5f4-491f-8700-fde8ef3ef150",
+      "name": "Code: Build Response Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1056,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              },
+              {
+                "name": "Access-Control-Allow-Methods",
+                "value": "POST, OPTIONS"
+              },
+              {
+                "name": "Access-Control-Allow-Headers",
+                "value": "Content-Type"
+              }
+            ]
+          }
+        }
+      },
+      "id": "3c4d3de0-50cb-4a0c-b1b2-8f9005461dd0",
+      "name": "Response: 200 OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1280,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ error: true, message: 'user_id is required', code: 400 }) }}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "*"
+              }
+            ]
+          }
+        }
+      },
+      "id": "57477bd8-980f-46b3-8187-a24504851f20",
+      "name": "Response: 400 Bad Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        96,
+        336
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "CORS: OPTIONS /dashboard/profile": {
+      "main": [
+        [
+          {
+            "node": "CORS: Respond 204",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook: POST /dashboard/profile": {
+      "main": [
+        [
+          {
+            "node": "Validate: user_id exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate: user_id exists?": {
+      "main": [
+        [
+          {
+            "node": "Set: user_id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Response: 400 Bad Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set: user_id": {
+      "main": [
+        [
+          {
+            "node": "Postgres: Get User & Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres: Get User & Stats": {
+      "main": [
+        [
+          {
+            "node": "Postgres: Get Vocabularies",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code: Build Response Payload": {
+      "main": [
+        [
+          {
+            "node": "Response: 200 OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres: Get Vocabularies": {
+      "main": [
+        [
+          {
+            "node": "Code: Build Response Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "78a2ed34-5ceb-4871-ab65-6133f5255e39",
+  "meta": {
+    "instanceId": "0bc038e49b07af2e3e858246c7c482b54ba66879f695b1ba1f1900faa8f7d141"
+  },
+  "id": "x9sbwIpVH0bF9vEb",
+  "tags": []
+}

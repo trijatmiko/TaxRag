@@ -1,0 +1,1553 @@
+{
+  "name": "Ingestion Pipeline V13",
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://aisuka.com"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAG Tax Indonesia"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"model\": {{ JSON.stringify($json.model) }}, \"temperature\": {{ $json.temperature }}, \"max_tokens\": {{ $json.max_tokens }}, \"messages\": {{ JSON.stringify($json.messages) }}}",
+        "options": {}
+      },
+      "id": "009a5118-afa9-4144-96c4-d96f53de9ffa",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        928,
+        704
+      ],
+      "name": "LLM Clean Batch",
+      "retryOnFail": true,
+      "maxTries": 5,
+      "waitBetweenTries": 3000,
+      "disabled": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "http://aisuka.com"
+            },
+            {
+              "name": "X-Title",
+              "value": "RAG Tax Indonesia"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ $json.embedding_input }}"
+            },
+            {
+              "name": "model",
+              "value": "={{ $env.OPENROUTER_EMBEDDING_MODEL }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          },
+          "timeout": 60000
+        }
+      },
+      "id": "806ad5a7-f8de-48b7-afcc-cbd724099691",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        3248,
+        416
+      ],
+      "name": "Embedding",
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO ingest_failed_logs (\n    relational_id,\n    pasal_number,\n    chunk_index,\n    error_reason,\n    chunk_text\n)\nVALUES (\n    $1,\n    $2,\n    $3,\n    $4,\n    $5\n);",
+        "options": {
+          "queryReplacement": "=={{\n[\n  $json.relational_id,\n  $json.pasal_number,\n  $json.chunk_index,\n  JSON.stringify($json.quality_flags || []),\n  $json.chunk_preview || $json.chunk_text\n]\n}}"
+        }
+      },
+      "id": "34ef5a6a-987d-4638-982d-6332e947a978",
+      "name": "Log Failed Quality",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3184,
+        752
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "P3my7gcL6yREmLDp",
+          "name": "Postgres account TaxRag"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- V11 FIX: Aggregate hasil similarity menjadi 1 row per chunk\n-- agar Evaluate Reconstruction tetap 1 item in → 1 item out\nSELECT\n  $2 AS source_url,\n  -- Same-doc: top match (chunk dari dokumen yang sama)\n  MAX(CASE WHEN match_origin = 'same_doc' THEN similarity END)     AS same_doc_top_sim,\n  -- Cross-doc: apakah ada duplikat mencurigakan (> 0.97)\n  json_agg(\n    CASE WHEN match_origin = 'cross_doc' AND similarity > 0.97\n    THEN doc_number ELSE NULL END\n  ) FILTER (WHERE match_origin = 'cross_doc' AND similarity > 0.97) AS duplicate_suspects,\n  COUNT(*) AS total_matches\nFROM (\n  (\n    SELECT\n      1 - (embedding <=> $1::vector) AS similarity,\n      doc_number,\n      pasal_number,\n      source_url,\n      'same_doc' AS match_origin\n    FROM tax_documents\n    WHERE source_url = $2\n      AND status_hukum = 'BERLAKU'\n    ORDER BY embedding <=> $1::vector\n    LIMIT 3\n  )\n  UNION ALL\n  (\n    SELECT\n      1 - (embedding <=> $1::vector) AS similarity,\n      doc_number,\n      pasal_number,\n      source_url,\n      'cross_doc' AS match_origin\n    FROM tax_documents\n    WHERE source_url != $2\n      AND status_hukum = 'BERLAKU'\n    ORDER BY embedding <=> $1::vector\n    LIMIT 3\n  )\n) sub;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.embedding_str,\n  $json.source_url\n] }}"
+        }
+      },
+      "id": "c9db8c67-3886-4a66-a508-4fc17c78f873",
+      "name": "Reconstruction Test",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        3744,
+        352
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "P3my7gcL6yREmLDp",
+          "name": "Postgres account TaxRag"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════════════════════\n// EVALUATE RECONSTRUCTION — V2\n// FIX-5: Pairing via relational_id (bukan posisi array).\n// ════════════════════════════════════════════════════════════════════════\n\nconst SIMILARITY_HIGH     = 0.95;\nconst SIMILARITY_MODERATE = 0.70;\n\n// FIX-5: Bangun lookup map dari Validate Embedding\nconst validatedItems = $('Embedding Quality Validator').all();\nconst validatedMap = {};\nfor (const v of validatedItems) {\n  const rid = v.json.relational_id;\n  if (rid) validatedMap[rid] = v.json;\n}\n\nconst items = $input.all();\n\nreturn items.map((item, index) => {\n  const recon = item.json;\n\n  // FIX-5: Coba pairing via source_url + chunk_index sebagai composite key,\n  // atau relational_id jika tersedia di output Reconstruction Test.\n  const rid = recon.relational_id;\n  const chunkData = (rid && validatedMap[rid])\n    ? validatedMap[rid]\n    : (validatedItems[index]?.json || {});\n\n  const sameSim = recon.same_doc_top_sim !== null\n    ? Math.round(parseFloat(recon.same_doc_top_sim) * 10_000) / 10_000\n    : null;\n\n  let reconstructionNote = 'new_chunk';\n  if (sameSim !== null) {\n    if (sameSim >= SIMILARITY_HIGH)          reconstructionNote = 'high_similarity_match';\n    else if (sameSim >= SIMILARITY_MODERATE) reconstructionNote = 'moderate_similarity_match';\n  }\n\n  const rawSuspects = recon.duplicate_suspects;\n  const neighborFlags = Array.isArray(rawSuspects)\n    ? rawSuspects.filter(Boolean).map(d => `DUPLICATE_SUSPECT: ${d}`)\n    : [];\n\n  return {\n    json: {\n      ...chunkData,\n      _rt_similarity:     sameSim,\n      _rt_note:           reconstructionNote,\n      _rt_neighbor_flags: neighborFlags,\n    },\n  };\n});"
+      },
+      "id": "8936e737-8167-4912-8069-8a6bb05d826b",
+      "name": "Evaluate Reconstruction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3968,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO tax_documents (\n  id, chunk_text, chunk_index, pasal_number,\n  doc_type, doc_number, doc_year, doc_title,\n  jenis_pajak, source_url, status_hukum, berlaku_sejak,\n  dicabut_oleh, doc_category,\n  mencabut, diubah_oleh, mengubah,\n  total_chunks, ingested_at, embedding,\n  ingestion_status, updated_at,\n  total_chunks_expected, total_chunks_ingested,\n  bab, section_type, breadcrumb, is_table,\n  doc_keywords, dasar_hukum, doc_ringkasan, abstrak_raw,\n  -- [V12] kolom baru\n  relational_id, pasal_relational_id, header, hierarchy_level,\n  semantic_types, semantic_type,\n  contains_definition, contains_sanction, contains_exception,\n  contains_obligation, contains_prohibition,\n  contains_procedure, contains_timeline,\n  outgoing_references, ayat_numbers, huruf_references, citation_graph,\n  legal_entities, legal_concept_tags,\n  procedural_stage, procedural_stage_primary,\n  primary_domain, secondary_domains, domain_tags,\n  domain_scores, domain_confidence,\n  semantic_importance, retrieval_boost, chunk_summary,\n  quality_flags, quality_score, embedding_ready,\n  embedding_validated, l2_norm,\n  _rt_similarity, _rt_note, _rt_neighbor_flags\n)\nVALUES (\n  gen_random_uuid(),\n  $1,  $2,  $3,  $4,  $5,  $6,  $7,  $8,  $9,  $10,\n  $11, $12, $13, $14::jsonb, $15::jsonb, $16::jsonb,\n  $17, NOW(), $18::vector,\n  'IN_PROGRESS', NOW(),\n  $17, 0,\n  $19, $20, $21, $22::boolean,\n  $23::text[], $24, $25, $26,\n  -- [V12] $27–$62\n  $27, $28, $29, $30,\n  $31::text[], $32,\n  $33::boolean, $34::boolean, $35::boolean,\n  $36::boolean, $37::boolean,\n  $38::boolean, $39::boolean,\n  $40::text[], $41::text[], $42::text[], $43::jsonb,\n  $44::text[], $45::text[],\n  $46::text[], $47,\n  $48, $49::text[], $50::text[],\n  $51::jsonb, $52::numeric,\n  $53::numeric, $54::numeric, $55,\n  $56::text[], $57::numeric, $58::boolean,\n  $59::boolean, $60::numeric,\n  $61::numeric, $62, $63::jsonb\n)\nON CONFLICT (source_url, chunk_index)\nDO UPDATE SET\n  chunk_text              = EXCLUDED.chunk_text,\n  pasal_number            = EXCLUDED.pasal_number,\n  doc_type                = EXCLUDED.doc_type,\n  doc_number              = EXCLUDED.doc_number,\n  doc_year                = EXCLUDED.doc_year,\n  doc_title               = EXCLUDED.doc_title,\n  jenis_pajak             = EXCLUDED.jenis_pajak,\n  status_hukum            = EXCLUDED.status_hukum,\n  berlaku_sejak           = EXCLUDED.berlaku_sejak,\n  dicabut_oleh            = EXCLUDED.dicabut_oleh,\n  doc_category            = EXCLUDED.doc_category,\n  mencabut                = EXCLUDED.mencabut,\n  diubah_oleh             = EXCLUDED.diubah_oleh,\n  mengubah                = EXCLUDED.mengubah,\n  total_chunks            = EXCLUDED.total_chunks,\n  total_chunks_expected   = EXCLUDED.total_chunks_expected,\n  embedding               = EXCLUDED.embedding,\n  ingested_at             = NOW(),\n  ingestion_status        = 'IN_PROGRESS',\n  updated_at              = NOW(),\n  bab                     = EXCLUDED.bab,\n  section_type            = EXCLUDED.section_type,\n  breadcrumb              = EXCLUDED.breadcrumb,\n  is_table                = EXCLUDED.is_table,\n  doc_keywords            = EXCLUDED.doc_keywords,\n  dasar_hukum             = EXCLUDED.dasar_hukum,\n  doc_ringkasan           = EXCLUDED.doc_ringkasan,\n  abstrak_raw             = EXCLUDED.abstrak_raw,\n  -- [V12]\n  relational_id           = EXCLUDED.relational_id,\n  pasal_relational_id     = EXCLUDED.pasal_relational_id,\n  header                  = EXCLUDED.header,\n  hierarchy_level         = EXCLUDED.hierarchy_level,\n  semantic_types          = EXCLUDED.semantic_types,\n  semantic_type           = EXCLUDED.semantic_type,\n  contains_definition     = EXCLUDED.contains_definition,\n  contains_sanction       = EXCLUDED.contains_sanction,\n  contains_exception      = EXCLUDED.contains_exception,\n  contains_obligation     = EXCLUDED.contains_obligation,\n  contains_prohibition    = EXCLUDED.contains_prohibition,\n  contains_procedure      = EXCLUDED.contains_procedure,\n  contains_timeline       = EXCLUDED.contains_timeline,\n  outgoing_references     = EXCLUDED.outgoing_references,\n  ayat_numbers            = EXCLUDED.ayat_numbers,\n  huruf_references        = EXCLUDED.huruf_references,\n  citation_graph          = EXCLUDED.citation_graph,\n  legal_entities          = EXCLUDED.legal_entities,\n  legal_concept_tags      = EXCLUDED.legal_concept_tags,\n  procedural_stage        = EXCLUDED.procedural_stage,\n  procedural_stage_primary= EXCLUDED.procedural_stage_primary,\n  primary_domain          = EXCLUDED.primary_domain,\n  secondary_domains       = EXCLUDED.secondary_domains,\n  domain_tags             = EXCLUDED.domain_tags,\n  domain_scores           = EXCLUDED.domain_scores,\n  domain_confidence       = EXCLUDED.domain_confidence,\n  semantic_importance     = EXCLUDED.semantic_importance,\n  retrieval_boost         = EXCLUDED.retrieval_boost,\n  chunk_summary           = EXCLUDED.chunk_summary,\n  quality_flags           = EXCLUDED.quality_flags,\n  quality_score           = EXCLUDED.quality_score,\n  embedding_ready         = EXCLUDED.embedding_ready,\n  embedding_validated     = EXCLUDED.embedding_validated,\n  l2_norm                 = EXCLUDED.l2_norm,\n  _rt_similarity          = EXCLUDED._rt_similarity,\n  _rt_note                = EXCLUDED._rt_note,\n  _rt_neighbor_flags      = EXCLUDED._rt_neighbor_flags;\n\n-- 2. Audit log (tidak berubah)\nINSERT INTO ingestion_audit_log (\n  chunk_fingerprint, doc_type, doc_number, doc_year, pasal_number,\n  pipeline_version,\n  ocr_score, completeness_score, metadata_score, final_quality_score,\n  passed, flagged_reason,\n  reconstruction_similarity, neighbor_flags,\n  tested_at\n) VALUES (\n  md5($1),\n  $4, $5, $6, $3, $64,\n  $65::float, $66::float, $67::float, $68::float,\n  true, null,\n  $69, $70::jsonb,\n  NOW()\n)\nON CONFLICT (chunk_fingerprint) DO UPDATE SET\n  ocr_score                 = EXCLUDED.ocr_score,\n  completeness_score        = EXCLUDED.completeness_score,\n  final_quality_score       = EXCLUDED.final_quality_score,\n  reconstruction_similarity = EXCLUDED.reconstruction_similarity,\n  neighbor_flags            = EXCLUDED.neighbor_flags,\n  passed                    = true,\n  tested_at                 = NOW();",
+        "options": {
+          "queryReplacement": "={{ [\n  // ── $1–$18: Inti ──────────────────────────────────────────\n  $json.chunk_text,\n  $json.chunk_index,\n  $json.pasal_number || null,\n  ($json.metadata?.doc_type   || $json.doc_type)   || null,\n  ($json.metadata?.doc_number || $json.doc_number) || null,\n  ($json.metadata?.doc_year   || $json.doc_year)   || null,\n  ($json.metadata?.doc_title  || $json.doc_title)  || null,\n  ($json.metadata?.jenis_pajak|| $json.jenis_pajak)|| null,\n  ($json.metadata?.source_url || $json.source_url) || null,\n  ($json.metadata?.status_hukum || $json.status_hukum) || null,\n  ($json.metadata?.berlaku_sejak|| $json.berlaku_sejak)|| null,\n  ($json.metadata?.dicabut_oleh || $json.dicabut_oleh) || null,\n  ($json.metadata?.doc_category || $json.doc_category) || null,\n  JSON.stringify($json.metadata?.mencabut   || $json.mencabut   || []),\n  JSON.stringify($json.metadata?.diubah_oleh|| $json.diubah_oleh|| []),\n  JSON.stringify($json.metadata?.mengubah   || $json.mengubah   || []),\n  $json.total_chunks   || null,\n  $json.embedding_str,\n\n  // ── $19–$26: V11 ────────────────────────────────────────────\n  $json.bab            || null,\n  $json.section_type   || 'batang_tubuh',\n  $json.breadcrumb     || null,\n  $json.is_table === true,\n  // $23: doc_keywords (Force Array)\n  Array.isArray($json.doc_keywords) ? $json.doc_keywords : ($json.doc_keywords ? [$json.doc_keywords] : []),\n  $json.dasar_hukum    || null,\n  $json.doc_ringkasan  || null,\n  $json.abstrak_raw    || null,\n\n  // ── $27–$63: V12 (Force Array untuk kolom text[]) ───────────\n  $json.relational_id                    || null,         // $27\n  $json.pasal_relational_id              || null,         // $28\n  $json.header                           || null,         // $29\n  $json.hierarchy_level                  || 'pasal_chunk',// $30\n  // $31: semantic_types (Force Array)\n  Array.isArray($json.semantic_types) ? $json.semantic_types : ($json.semantic_types ? [$json.semantic_types] : []),\n  $json.semantic_type                    || null,         // $32\n  $json.contains_definition  === true,                    // $33\n  $json.contains_sanction    === true,                    // $34\n  $json.contains_exception   === true,                    // $35\n  $json.contains_obligation  === true,                    // $36\n  $json.contains_prohibition === true,                    // $37\n  $json.contains_procedure   === true,                    // $38\n  $json.contains_timeline    === true,                    // $39\n  // $40: outgoing_references (Force Array)\n  Array.isArray($json.outgoing_references) ? $json.outgoing_references : ($json.outgoing_references ? [$json.outgoing_references] : []),\n  // $41: ayat_numbers (Force Array)\n  Array.isArray($json.ayat_numbers) ? $json.ayat_numbers : ($json.ayat_numbers ? [$json.ayat_numbers] : []),\n  // $42: huruf_references (Force Array)\n  Array.isArray($json.huruf_references) ? $json.huruf_references : ($json.huruf_references ? [$json.huruf_references] : []),\n  \n  JSON.stringify($json.citation_graph     || {}),         // $43 (JSONB)\n  \n  // $44: legal_entities (Force Array)\n  Array.isArray($json.legal_entities) ? $json.legal_entities : ($json.legal_entities ? [$json.legal_entities] : []),\n  // $45: legal_concept_tags (Force Array)\n  Array.isArray($json.legal_concept_tags) ? $json.legal_concept_tags : ($json.legal_concept_tags ? [$json.legal_concept_tags] : []),\n  // $46: procedural_stage (Force Array)\n  Array.isArray($json.procedural_stage) ? $json.procedural_stage : ($json.procedural_stage ? [$json.procedural_stage] : []),\n  \n  $json.procedural_stage_primary          || null,        // $47\n  $json.primary_domain                    || null,        // $48\n  // $49: secondary_domains (Force Array)\n  Array.isArray($json.secondary_domains) ? $json.secondary_domains : ($json.secondary_domains ? [$json.secondary_domains] : []),\n  // $50: domain_tags (Force Array)\n  Array.isArray($json.domain_tags) ? $json.domain_tags : ($json.domain_tags ? [$json.domain_tags] : []),\n  \n  JSON.stringify($json.domain_scores      || {}),         // $51 (JSONB)\n  $json.domain_confidence                 ?? null,\n  $json.semantic_importance                ?? null,\n  $json.retrieval_boost                    ?? null,\n  $json.chunk_summary                     || null,\n  // $56: quality_flags (Force Array)\n  Array.isArray($json.quality_flags) ? $json.quality_flags : ($json.quality_flags ? [$json.quality_flags] : []),\n  \n  $json.quality_score                      ?? null,\n  $json.embedding_ready   === true,\n  $json.embedding_validated=== true,\n  $json.l2_norm                            ?? null,\n  $json._rt_similarity                     ?? null,\n  $json._rt_note                          || null,\n  JSON.stringify($json._rt_neighbor_flags || []),         // $63 (JSONB)\n\n  // ── Audit Log ──────────────────────────────────────────────\n  $json.pipeline_version  || 'V12',\n  $json._qs_ocr           || 0,\n  $json._qs_completeness  || 0,\n  $json._qs_metadata      || 0,\n  $json._qs_final         || 0,\n  $json._rt_similarity    || 0,\n  JSON.stringify($json._rt_neighbor_flags || [])\n] }}"
+        }
+      },
+      "id": "8c3ac436-d39a-4e37-9df4-28a7044d3854",
+      "name": "Upsert + Audit Log",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4400,
+        352
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "P3my7gcL6yREmLDp",
+          "name": "Postgres account TaxRag"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const input      = $input.first().json;\nconst errorMsg   = input.error?.message || input.message || 'Unknown LLM error';\nconst executionId = $execution?.id || 'unknown-execution';\n\nreturn [{\n  json: {\n    error_source:    'LLM_NODE',\n    error_message:   errorMsg,\n    execution_id:    executionId,\n    source_url:      input.source_url || input.url || null,\n    doc_number:      input.doc_number || null,\n    failed_at:       new Date().toISOString(),\n    retry_suggested: true,\n  },\n}];\n"
+      },
+      "id": "eff0e2fd-4c49-4ff3-8d44-3415c0ebcecf",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1152,
+        720
+      ],
+      "name": "Handle LLM Error",
+      "disabled": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO ingestion_error_log (\n  error_source, error_message, execution_id,\n  source_url, doc_number, failed_at, retry_suggested\n) VALUES (\n  $1, $2, $3, $4, $5, NOW(), $6\n);",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.error_source,\n  $json.error_message,\n  $json.execution_id,\n  $json.source_url,\n  $json.doc_number,\n  $json.retry_suggested\n] }}"
+        }
+      },
+      "id": "cc21194b-ee26-415c-b443-98864acdb3b5",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1360,
+        704
+      ],
+      "name": "Log LLM Error",
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "1JYeAWZBGkU3mojGU5jD62xDvTnQRZ58cyjki568a4Dw",
+          "mode": "list",
+          "cachedResultName": "LinkJDIH",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1JYeAWZBGkU3mojGU5jD62xDvTnQRZ58cyjki568a4Dw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 1425588184,
+          "mode": "list",
+          "cachedResultName": "Incoming",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1JYeAWZBGkU3mojGU5jD62xDvTnQRZ58cyjki568a4Dw/edit#gid=1425588184"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1392,
+        272
+      ],
+      "id": "c7adb908-1f55-45f6-bb0d-3dc543047cd7",
+      "name": "Google Sheets Trigger",
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "waytlyGeuNB8TZAu",
+          "name": "Google Sheets Trigger account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const TYPE_MAP = {\n  pmk: 'PMK', uu: 'UU', pp: 'PP',\n  per: 'PER', kmk: 'KMK', se: 'SE',\n};\n\nconst SLUG_RE = /^([a-z]+)-(\\d+)(?:[a-z0-9\\-]*?)-tahun-(\\d{4})$/;\n\nconst input  = $input.first().json;\nconst gSheet = $('Google Sheets Trigger').first().json;\n\nconst rawUrl = input['Url'] || '';\nif (!rawUrl.trim()) {\n  throw new Error('[ParseJDIHURL] Field \"Url\" kosong atau tidak ditemukan di row Google Sheet.');\n}\n\nconst resolvedSourceUrl = gSheet.PDF || gSheet.Url || '';\nif (!resolvedSourceUrl.trim()) {\n  throw new Error('[ParseJDIHURL] source_url kosong: kolom PDF dan Url tidak ada di Google Sheet row ini.');\n}\n\nconst slug  = rawUrl.split('/').pop().toLowerCase().trim();\nconst match = slug.match(SLUG_RE);\n\nlet docType, docNumber, docYear;\n\nif (match) {\n  docType   = TYPE_MAP[match[1]] || match[1].toUpperCase();\n  docNumber = match[2];\n  docYear   = match[3];\n} else {\n  const parts    = slug.split('-');\n  const tahunIdx = parts.indexOf('tahun');\n  docType   = TYPE_MAP[parts[0]] || parts[0].toUpperCase();\n  docNumber = parts[1] || '';\n  docYear   = tahunIdx !== -1 ? parts[tahunIdx + 1] : '';\n}\n\nreturn [{\n  json: {\n    docType,\n    docNumber,\n    docYear,\n    fullQuery:       `${docType} ${docNumber} ${docYear}`.trim(),\n    mengubah:        input.mengubah,\n    diubah_oleh:     input.diubah_oleh,\n    mencabut:        input.mencabut,\n    dicabut_oleh:    input.dicabut_oleh,\n    status_hukum:    input.status_hukum,\n    riwayat_dokumen: input.riwayat_dokumen,\n    jenis_pajak:     input.jenis_pajak,\n    source_url:      resolvedSourceUrl,\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -960,
+        256
+      ],
+      "id": "50ac9d7b-4837-43fa-8e85-e36dc5b0b7e1",
+      "name": "ParseJDIHURL"
+    },
+    {
+      "parameters": {
+        "jsCode": "const TYPE_TO_BENTUK = {\n  UU:      'Undang-Undang',\n  PMK:     'Peraturan Menteri',\n  PP:      'Peraturan Pemerintah',\n  PER:     'Peraturan Unit Eselon I',\n  KMK:     'Keputusan Menteri',\n  PERPRES: 'Peraturan Presiden',\n};\n\nconst parsedDoc   = $('ParseJDIHURL').first().json;\nconst xtract    = $('ExtractPDF').first().json;\nconst { data: jdihData } = $input.first().json;\n\nconst targetType   = (parsedDoc.docType  || '').toUpperCase();\nconst targetNo     = String(parsedDoc.docNumber || '').trim();\nconst targetYear   = String(parsedDoc.docYear   || '').trim();\nconst targetBentuk = TYPE_TO_BENTUK[targetType];\n\nif (!targetBentuk) {\n  return [{ json: { jdih_found: false, reason: `Tipe dokumen ${targetType} tidak terdaftar di mapping.` } }];\n}\nif (!jdihData || jdihData.length === 0) {\n  return [{ json: { jdih_found: false, reason: 'API JDIH memberikan respon kosong.' } }];\n}\n\nconst exactMatch = jdihData.find(item =>\n  String(item.bentuk).toLowerCase() === targetBentuk.toLowerCase()\n  && String(item.no).trim()    === targetNo\n  && String(item.tahun).trim() === targetYear\n);\n\nif (!exactMatch) {\n  return [{\n    json: {\n      jdih_found: false,\n      reason: `Dokumen ${targetBentuk} No ${targetNo} Tahun ${targetYear} tidak ditemukan di JDIH.`,\n    },\n  }];\n}\n\n// ── [V11] Parse Abstrak JDIH ──────────────────────────────────────────────────\nlet abstrak_raw    = null;\nlet doc_keywords   = null;\nlet doc_ringkasan  = null;\nlet dasar_hukum    = null;\n\nconst abstrakRaw = exactMatch.abstrak || exactMatch.abstract || null;\n\nif (abstrakRaw && abstrakRaw.trim().length > 0) {\n  abstrak_raw = abstrakRaw.trim();\n\n  // 1. doc_keywords — baris pertama setelah header \"ABSTRAK PERATURAN\"\n  //    Format: \"COVID-19 – VAKSIN – VALUTA ASING\" atau baris pertama abstrak\n  const keywordMatch = abstrak_raw.match(/ABSTRAK\\s+PERATURAN[^\\n]*\\n([^\\n]+)/i);\n  if (keywordMatch) {\n    const rawKw = keywordMatch[1].trim();\n    // Split by common separators: –, -, ;, •\n    doc_keywords = rawKw.split(/[–\\-;•,]+/).map(k => k.trim()).filter(k => k.length > 0);\n  } else {\n    // Fallback: baris pertama abstrak sebagai keywords\n    const firstLine = abstrak_raw.split('\\n')[0].trim();\n    if (firstLine.length > 0 && firstLine.length < 300) {\n      doc_keywords = firstLine.split(/[–\\-;•,]+/).map(k => k.trim()).filter(k => k.length > 0);\n    }\n  }\n\n  // 2. dasar_hukum — paragraf setelah \"Dasar Hukum Peraturan ini adalah:\"\n  const dasarMatch = abstrak_raw.match(/Dasar Hukum[^:]*:\\s*([\\s\\S]*?)(?=\\n\\n|\\n[A-Z]|$)/i);\n  if (dasarMatch) {\n    const dasarText = dasarMatch[1].trim();\n    // Split per peraturan: UU, PP, PMK, KMK, Perpres, dll\n    dasar_hukum = dasarText\n      .split(/[;\\n]+/)\n      .map(s => s.replace(/^\\d+\\.\\s*/, '').trim())\n      .filter(s => s.length > 3 && /UU|PP|PMK|KMK|Perpres|Peraturan|Undang|Keputusan/i.test(s));\n    if (dasar_hukum.length === 0) dasar_hukum = null;\n  }\n\n  // 3. doc_ringkasan — paragraf \"Dalam Peraturan ini diatur:\"\n  const ringkasanMatch = abstrak_raw.match(/Dalam\\s+Peraturan(?:\\s+(?:Menteri|ini))*\\s+ini\\s+diatur\\s*:?\\s*([\\s\\S]{10,})/i);\n  if (ringkasanMatch) {\n    doc_ringkasan = ringkasanMatch[1].trim().slice(0, 500);\n  }\n}\n// ── End Parse Abstrak ─────────────────────────────────────────────────────────\n\nreturn [{\n  json: {\n    jdih_found:           true,\n    status_hukum:         exactMatch.status,\n    doc_title:            exactMatch.judul,\n    slug:                 exactMatch.slug,\n    bentuk_jdih:          exactMatch.bentuk,\n    tanggal_pengundangan: exactMatch.tanggal_pengundangan,\n    doc_type:             targetType,\n    doc_number:           targetNo,\n    doc_year:             targetYear,\n    jenis_pajak:          parsedDoc.jenis_pajak || 'Umum',\n    source_url:           parsedDoc.source_url,\n    riwayat_dokumen:      parsedDoc.riwayat_dokumen || null,\n    is_consolidated:      exactMatch.konsolidasi === 1,\n    matched_by:           'strict_string_logic',\n    // [V11] Abstrak fields\n    abstrak_raw:          abstrak_raw,\n    doc_keywords:         doc_keywords,\n    doc_ringkasan:        doc_ringkasan,\n    dasar_hukum:          dasar_hukum,\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        368,
+        256
+      ],
+      "id": "617ee3e8-8df7-4a6a-be99-afd0272038d9",
+      "name": "ParseJDIHResponse"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node: \"MergeBestSource\"\n// V11: Tambah pass-through field abstrak dari ParseJDIHResponse.\n\nconst jdih = $input.first().json;\n\n// ── 1. AMBIL TEKS SECARA AMAN (Multi-Path Fallback) ──────────────────────────\nlet rawFullText = '';\nlet activeSource = 'UNKNOWN';\n\ntry {\n  const htmlText = $('ExtractHTML').first().json.text;\n  if (htmlText && htmlText.trim().length > 100) {\n    rawFullText = htmlText;\n    activeSource = 'JDIH_HTM';\n  } else {\n    throw new Error('HTML text terlalu pendek atau kosong');\n  }\n} catch (e) {\n  try {\n    const pdfText = $('ExtractPDF').first().json.text;\n    if (pdfText && pdfText.trim().length > 100) {\n      rawFullText = pdfText;\n      activeSource = 'JDIH_PDF';\n    } else {\n      throw new Error('PDF text terlalu pendek atau kosong');\n    }\n  } catch (e2) {\n    try {\n      if (jdih.raw_full_text && jdih.raw_full_text.trim().length > 100) {\n        rawFullText = jdih.raw_full_text;\n        activeSource = 'JDIH_DIRECT';\n      }\n    } catch (e3) {\n      // Semua jalur gagal\n    }\n  }\n}\n\n// ── 2. GUARD: Jika rawFullText kosong ────────────────────────────────────────\nif (!rawFullText || rawFullText.trim().length === 0) {\n  throw new Error(\n    `[MergeBestSource] GAGAL: Tidak ada teks yang bisa diekstrak untuk ` +\n    `${jdih.doc_type} ${jdih.doc_number}/${jdih.doc_year}. ` +\n    `Semua jalur (ExtractHTML, ExtractPDF, raw_full_text) kosong.`\n  );\n}\n\n// ── 3. PENYUSUNAN METADATA AKHIR ─────────────────────────────────────────────\nconst mergedMeta = {\n  doc_type:          jdih.doc_type,\n  doc_number:        jdih.doc_number,\n  doc_year:          jdih.doc_year,\n  doc_title:         jdih.doc_title,\n  jenis_pajak:       jdih.jenis_pajak,\n  status_hukum:      jdih.status_hukum,\n  berlaku_sejak:     jdih.berlaku_sejak,\n  dicabut_oleh:      jdih.dicabut_oleh      || null,\n  doc_category:      'Umum',  // Parse Metadata1 akan override dengan validasi enum\n  tgl_penetapan:     jdih.tgl_penetapan,\n  tgl_pengundangan:  jdih.tgl_pengundangan,\n  jdih_source_url:   jdih.jdih_source_url,\n  nomor_lengkap:     jdih.nomor_lengkap,\n  status_confidence: jdih.status_confidence,\n  _data_source:      activeSource,\n  riwayat_dokumen:   jdih.riwayat_dokumen,\n  // [V11] Pass-through abstrak fields\n  abstrak_raw:       jdih.abstrak_raw    || null,\n  doc_keywords:      jdih.doc_keywords   || null,\n  doc_ringkasan:     jdih.doc_ringkasan  || null,\n  dasar_hukum:       jdih.dasar_hukum    || null,\n};\n\n// ── 4. OUTPUT FINAL ───────────────────────────────────────────────────────────\nreturn [{\n  json: {\n    choices: [{\n      message: {\n        content: JSON.stringify({ metadata: mergedMeta })\n      }\n    }],\n    raw_full_text: rawFullText,\n    source_url:    jdih.source_url || jdih.jdih_source_url,\n    jdih_found:    jdih.jdih_found\n  }\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        704,
+        176
+      ],
+      "id": "54217321-0664-4e35-9f87-af831f7fc3c2",
+      "name": "MergeBestSource"
+    },
+    {
+      "parameters": {
+        "url": "https://jdih.kemenkeu.go.id/api/search",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "q",
+              "value": "={{ $('ParseJDIHURL').item.json.fullQuery }}"
+            },
+            {
+              "name": "no",
+              "value": "={{ $('ParseJDIHURL').item.json.docNumber }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -176,
+        352
+      ],
+      "id": "f8dfd9ff-91ee-4083-8409-1dcdabcabe25",
+      "name": "GetAPIDataJDIH",
+      "notesInFlow": false,
+      "alwaysOutputData": false,
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "maxTries": 5,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "7f9e274e-bddc-452d-90d4-973aa20db195",
+              "leftValue": "={{ $json.Status }}",
+              "rightValue": "=PENDING",
+              "operator": {
+                "type": "string",
+                "operation": "contains"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1184,
+        272
+      ],
+      "id": "3d4b4888-691c-4f48-9256-4944e58a9591",
+      "name": "If"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -1056,
+        480
+      ],
+      "id": "a3833c36-9280-4d41-b6d8-39922f7c3bd8",
+      "name": "No Operation, do nothing"
+    },
+    {
+      "parameters": {
+        "jsCode": "const BULAN_MAP = {\n  jan: '01', feb: '02', mar: '03', apr: '04',\n  mei: '05', jun: '06', jul: '07', agu: '08',\n  sep: '09', okt: '10', nov: '11', des: '12',\n};\n\nconst NOMOR_RE = /^(UU|PP|PMK|PER|KMK|SE|PERPPU|PERPU)\\s+(?:NO\\.?\\s*|NOMOR\\s+)?(\\d+)(?:[\\/\\-][\\w.]+)*\\s+(?:TAHUN\\s+)?(\\d{4})$/i;\nconst DATE_RE  = /^(\\d{1,2})\\s+(\\w+)\\s+(\\d{4})$/;\nconst TANGGAL_LINE_RE = /^(\\d{1,2}\\s+\\w+\\s+\\d{4}):?$/;\n\nfunction normalizeDate(raw) {\n  if (!raw) return null;\n  const m = raw.trim().match(DATE_RE);\n  if (!m) return raw;\n  const month = BULAN_MAP[m[2].toLowerCase().substring(0, 3)];\n  return month ? `${m[3]}-${month}-${m[1].padStart(2, '0')}` : raw;\n}\n\nfunction parseNomor(raw) {\n  const cleaned = (raw || '')\n    .replace(/^(dengan|diubah(\\s+oleh)?|mencabut|mengubah|sebagian)\\s+/gi, '')\n    .trim();\n  const m = cleaned.match(NOMOR_RE);\n  if (m) return { doc_type: m[1].toUpperCase(), doc_number: m[2], doc_year: m[3] };\n  return { doc_type: null, doc_number: null, doc_year: null };\n}\n\nfunction buildEntry(nomor, judul, tanggal) {\n  return { ...parseNomor(nomor), judul: (judul || '').trim(), tanggal: normalizeDate(tanggal) };\n}\n\nfunction parseRiwayat(text) {\n  const result = { mencabut: [], diubah_oleh: [], mengubah: [] };\n  let currentTanggal = null;\n\n  for (const line of (text || '').split(/\\r?\\n/)) {\n    const trimmed = line.trim();\n    if (!trimmed) continue;\n\n    const tanggalMatch = trimmed.match(TANGGAL_LINE_RE);\n    if (tanggalMatch) { currentTanggal = tanggalMatch[1]; continue; }\n\n    const mencabutMatch  = trimmed.match(/^Mencabut\\s+(.+?)\\s+tentang\\s+(.+)$/i);\n    if (mencabutMatch)  { result.mencabut.push(buildEntry(mencabutMatch[1], mencabutMatch[2], currentTanggal));  continue; }\n\n    const diubahMatch    = trimmed.match(/^Diubah\\s+(?:oleh\\s+)?(.+?)\\s+tentang\\s+(.+)$/i);\n    if (diubahMatch)    { result.diubah_oleh.push(buildEntry(diubahMatch[1], diubahMatch[2], currentTanggal));   continue; }\n\n    const mengubahMatch  = trimmed.match(/^Mengubah\\s+(.+?)\\s+tentang\\s+(.+)$/i);\n    if (mengubahMatch)  { result.mengubah.push(buildEntry(mengubahMatch[1], mengubahMatch[2], currentTanggal)); }\n  }\n  return result;\n}\n\nconst { metadata = {}, raw_full_text: rawFullText } = $input.first().json;\nconst parsed = parseRiwayat(metadata.riwayat_dokumen);\n\nreturn [{\n  json: {\n    metadata: {\n      ...metadata,\n      mencabut:        parsed.mencabut,\n      diubah_oleh:     parsed.diubah_oleh,\n      mengubah:        parsed.mengubah,\n      riwayat_dokumen: null,\n    },\n    raw_full_text: rawFullText,\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1040,
+        176
+      ],
+      "id": "9202a4d2-340f-4ad7-80fa-833c50acc953",
+      "name": "ParseRiwayatDoc"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('ParseJDIHURL').item.json.source_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        0,
+        256
+      ],
+      "id": "d88c04ff-5da0-4b62-8ee5-aa55abdbad6b",
+      "name": "GetPDF",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "maxTries": 5
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {
+          "keepSource": "json"
+        }
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1.1,
+      "position": [
+        176,
+        256
+      ],
+      "id": "45f3e596-9770-49c9-bdfa-07fcce0a41fa",
+      "name": "ExtractPDF"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "acd7526b-8f74-4a89-ae63-ad182f782f2c",
+              "leftValue": "={{ $json.jdih_found }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        528,
+        256
+      ],
+      "id": "7539714c-0283-49c8-aed7-0b32a54967eb",
+      "name": "If2"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1JYeAWZBGkU3mojGU5jD62xDvTnQRZ58cyjki568a4Dw",
+          "mode": "list",
+          "cachedResultName": "LinkJDIH",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1JYeAWZBGkU3mojGU5jD62xDvTnQRZ58cyjki568a4Dw/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1JYeAWZBGkU3mojGU5jD62xDvTnQRZ58cyjki568a4Dw/edit#gid=0"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Status": "Gagal"
+          },
+          "matchingColumns": [
+            "Status"
+          ],
+          "schema": [
+            {
+              "id": "added_at",
+              "displayName": "added_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Url",
+              "displayName": "Url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "PDF",
+              "displayName": "PDF",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "riwayat_dokumen",
+              "displayName": "riwayat_dokumen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status_hukum",
+              "displayName": "status_hukum",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        752,
+        544
+      ],
+      "id": "6450bc24-5fe3-4b36-b825-a843f982a695",
+      "name": "UpdateStatusGS",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "1tgQZoCxAVPIrZrp",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('ParseJDIHURL').item.json.source_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        0,
+        0
+      ],
+      "id": "dcd66b54-de2b-410f-84f8-1eaf4f919e01",
+      "name": "GetHTML",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "maxTries": 5
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $('ParseJDIHURL').item.json.source_url }}",
+                    "rightValue": "htm",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    },
+                    "id": "51803783-46f4-48cd-a75a-c2f8900faab4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "HTM"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "cce2a896-600f-4af6-96a7-1c88883ab3a6",
+                    "leftValue": "={{ $('ParseJDIHURL').item.json.source_url }}",
+                    "rightValue": "pdf",
+                    "operator": {
+                      "type": "string",
+                      "operation": "contains"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "PDF"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -240,
+        16
+      ],
+      "id": "bd5c833e-c0ce-4e37-8dd2-242ca3d82a1a",
+      "name": "RulesFilterType"
+    },
+    {
+      "parameters": {
+        "jsCode": "const BLOCK_TAGS_RE    = /<\\/(p|div|br|tr|h[1-4]|table)>/gi;\nconst HTML_TAG_RE      = /<[^>]+>/g;\nconst MULTI_SPACE_RE   = /[ \\t]+/g;\nconst BLANK_LINES_RE   = /\\n\\s*\\n/g;\nconst NUMERIC_ENT_RE   = /&#(\\d+);/g;\nconst HEX_ENT_RE       = /&#x([0-9a-fA-F]+);/g;\n\nconst HTML_ENTITIES = {\n  '&nbsp;':  ' ',  '&amp;':   '&',  '&lt;':  '<',  '&gt;':  '>',\n  '&quot;':  '\"',  '&apos;':  \"'\",  '&#39;': \"'\",\n  '&ndash;': '–',  '&mdash;': '—',  '&hellip;': '…',\n};\n\nfunction decodeEntities(text) {\n  return text\n    .replace(/&[a-z]+;|&#39;/gi, m => HTML_ENTITIES[m] ?? m)\n    .replace(NUMERIC_ENT_RE, (_, n) => String.fromCharCode(parseInt(n, 10)))\n    .replace(HEX_ENT_RE,     (_, h) => String.fromCharCode(parseInt(h, 16)));\n}\n\n// Mengambil data HTML dari output node sebelumnya\nconst html = $input.first().json.data || '';\n\nconst text = decodeEntities(\n  html\n    .replace(/<script[^>]*>[\\s\\S]*?<\\/script>/gi, '')\n    .replace(/<style[^>]*>[\\s\\S]*?<\\/style>/gi, '')\n    .replace(BLOCK_TAGS_RE, '\\n')\n    .replace(HTML_TAG_RE, ' ')\n)\n  .replace(/\\r\\n/g, '\\n') // MENGHAPUS \\r agar menjadi \\n standar\n  .replace(/\\r/g, '\\n')\n  .replace(MULTI_SPACE_RE, ' ')\n  .replace(BLANK_LINES_RE, '\\n')\n  .trim();\n\n// Ambil metadata dari node JDIH awal untuk diteruskan ke bawah\nconst jdihData = $('GetAPIDataJDIH').first().json.data[0];\n\nreturn [{ \n  json: { \n    raw_full_text: text,\n    metadata: {\n      doc_type: jdihData.bentuk,\n      doc_id: jdihData.produk_hukum_id,\n      doc_number: jdihData.nomor,\n      doc_title: jdihData.judul,\n      doc_year: jdihData.tahun,\n      jenis_pajak:        jdihData.jenis_pajak || 'Umum',\n      is_consolidated:    jdihData.konsolidasi === 1,\n\n    // [V11] Abstrak fields\n   // abstrak_raw:          abstrak_raw,\n   // doc_keywords:         doc_keywords,\n   // doc_ringkasan:        doc_ringkasan,\n   // dasar_hukum:          dasar_hukum,\n      status_hukum:  $('ParseJDIHURL').first().json.status_hukum,\n    riwayat_dokumen: $('ParseJDIHURL').first().json.riwayat_dokumen || null,\n    source_url: $('ParseJDIHURL').first().json.source_url\n    }\n  } \n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        176,
+        0
+      ],
+      "id": "76687dfd-7d3c-4885-9ed6-e6f0d094d4cf",
+      "name": "ExtractHTML"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  EXISTS (\n    SELECT 1 FROM tax_documents\n    WHERE TRIM(LOWER(source_url)) = TRIM(LOWER($1))\n      AND ingestion_status = 'COMPLETE'\n  ) AS already_exists,\n  status_hukum AS existing_status_hukum,\n  dicabut_oleh AS existing_dicabut_oleh,\n  diubah_oleh AS existing_diubah_oleh,\n  mengubah AS existing_mengubah,\n  mencabut AS existing_mencabut\nFROM tax_documents\nWHERE TRIM(LOWER(source_url)) = TRIM(LOWER($1))\n  AND ingestion_status = 'COMPLETE'\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [\n  $('ParseJDIHURL').first().json.source_url\n] }}"
+        }
+      },
+      "id": "326b9941-149e-40f7-a9b7-5adf280f4da0",
+      "name": "Early Check",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -784,
+        256
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "P3my7gcL6yREmLDp",
+          "name": "Postgres account TaxRag"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "30622db2-4034-429f-8a4f-66313399981c",
+                    "leftValue": "={{ $json.already_exists }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "false",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Baru"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "962f03e0-7934-4fc3-87db-729e0220fe41",
+                    "leftValue": "={{ $json.already_exists }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  },
+                  {
+                    "id": "23b8d2f5-3b99-42d8-8dba-3720e2e90791",
+                    "leftValue": "={{ $json.existing_status_hukum?.toString().trim().toLowerCase() }}",
+                    "rightValue": "={{ $('ParseJDIHURL').first().json.status_hukum?.toString().trim().toLowerCase() }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "0091705b-23c8-46cf-8a38-e91c8e167c8a",
+                    "leftValue": "={{ ($json.existing_dicabut_oleh || []).map(i => i.toString().trim().toLowerCase()).sort().join(',') }}",
+                    "rightValue": "={{ ($('ParseJDIHURL').first().json.dicabut_oleh || []).map(i => i.toString().trim().toLowerCase()).sort().join(',') }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "5568e315-8a34-4ca1-9fbc-0d709db428af",
+                    "leftValue": "={{ ($json.existing_diubah_oleh || []).map(i => i.toString().trim().toLowerCase()).sort().join(',') }}",
+                    "rightValue": "={{ ($('ParseJDIHURL').first().json.diubah_oleh || []).map(i => i.toString().trim().toLowerCase()).sort().join(',') }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  },
+                  {
+                    "id": "3c2b8452-dc93-4698-869d-11378b246ee6",
+                    "leftValue": "={{ ($json.existing_mencabut || []).map(i => i.toString()).sort().join(',') + \"|\" + ($json.existing_mengubah || []).map(i => i.toString()).sort().join(',') }}",
+                    "rightValue": "={{ ($('ParseJDIHURL').first().json.mencabut || []).map(i => i.toString()).sort().join(',') + \"|\" + ($('ParseJDIHURL').first().json.mengubah || []).map(i => i.toString()).sort().join(',') }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Duplikat"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "97ac304f-f2d1-4cdc-9587-596280819e62",
+                    "leftValue": "={{ $json.already_exists }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "boolean",
+                      "operation": "true",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Metadata Berubah"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "9d9d6810-1f3d-40cb-be0c-647f318248a4",
+      "name": "Early Gate",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        -608,
+        240
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE tax_documents\nSET \n  status_hukum = $1,\n  dicabut_oleh = $2::jsonb,\n  diubah_oleh = $3::jsonb,\n  mencabut = $4::jsonb,\n  mengubah = $5::jsonb,\n  updated_at = NOW()\nWHERE source_url = $6;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.status_hukum,\n  JSON.stringify($json.dicabut_oleh),\n  JSON.stringify($json.diubah_oleh),\n  JSON.stringify($json.mencabut),\n  JSON.stringify($json.mengubah),\n  $json.source_url\n] }}"
+        }
+      },
+      "id": "851f019d-7852-47bc-aad8-8774f12ad13f",
+      "name": "Early Update Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -368,
+        608
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "P3my7gcL6yREmLDp",
+          "name": "Postgres account TaxRag"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO tax_documents (\n  source_url, \n  chunk_index, \n  chunk_text, \n  ingestion_status, \n  ingested_at,\n  status_hukum,\n  doc_type, \n  doc_number, \n  doc_year\n) VALUES (\n  $1, \n  0, \n  'INITIALIZING', \n  'IN_PROGRESS', \n  NOW(),\n  'BERLAKU',\n  'PENDING', \n  '0', \n  '0000'\n)\nON CONFLICT (source_url, chunk_index)\nDO UPDATE SET\n  ingestion_status = 'IN_PROGRESS',\n  ingested_at = NOW(),    -- GUNAKAN KOMA DI SINI\n  doc_type = 'PENDING',   -- GUNAKAN KOMA DI SINI\n  doc_number = '0',       -- GUNAKAN KOMA DI SINI\n  doc_year = '0000';      -- TITIK KOMA HANYA DI AKHIR",
+        "options": {
+          "queryReplacement": "={{ [\n  $('ParseJDIHURL').first().json.source_url\n] }}"
+        }
+      },
+      "id": "642713b2-7621-4118-bf84-f1dfcf938f9c",
+      "name": "Set Ingestion In Progress",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -432,
+        96
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "P3my7gcL6yREmLDp",
+          "name": "Postgres account TaxRag"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Shared parsing utilities (mirrors ParseRiwayatDoc with additional PMK slash format)\n\nconst BULAN_MAP = {\n  jan: '01', feb: '02', mar: '03', apr: '04',\n  mei: '05', jun: '06', jul: '07', agu: '08',\n  sep: '09', okt: '10', nov: '11', des: '12',\n};\n\nconst DATE_RE         = /^(\\d{1,2})\\s+(\\w+)\\s+(\\d{4})$/;\nconst TANGGAL_LINE_RE = /^(\\d{1,2}\\s+\\w+\\s+\\d{4}):?$/;\nconst PMK_SLASH_RE    = /^([\\d]+)\\/(PMK|UU|PP|PER|KMK|SE)[\\d.]*\\/(\\d{4})/i;\nconst STANDARD_NO_RE  = /(UU|PP|PMK|PER|KMK|SE|PERPPU)\\s*(?:NO\\.?\\s*|NOMOR\\s+)?([\\d.\\/]+)\\s*(?:TAHUN\\s+)?(\\d{4})/i;\nconst CLEANUP_RE      = /^(dengan|diubah|oleh|mencabut|mengubah)\\s+/gi;\n\nfunction normalizeDate(raw) {\n  if (!raw) return null;\n  const m = raw.trim().match(DATE_RE);\n  if (!m) return raw;\n  const month = BULAN_MAP[m[2].toLowerCase().substring(0, 3)];\n  return month ? `${m[3]}-${month}-${m[1].padStart(2, '0')}` : raw;\n}\n\nfunction parseNomor(raw) {\n  const cleaned = (raw || '').replace(CLEANUP_RE, '').trim();\n\n  const slash = cleaned.match(PMK_SLASH_RE);\n  if (slash) {\n    return { doc_type: slash[2].toUpperCase(), doc_number: slash[1], doc_year: slash[3], raw_nomor: cleaned };\n  }\n\n  const std = cleaned.match(STANDARD_NO_RE);\n  if (std) {\n    let num = std[2].replace(/\\/$/, '');\n    if (num.startsWith('.')) {\n      const firstNum = cleaned.match(/^(\\d+)/);\n      if (firstNum) num = firstNum[1];\n    }\n    return { doc_type: std[1].toUpperCase(), doc_number: num, doc_year: std[3], raw_nomor: cleaned };\n  }\n\n  return { doc_type: null, doc_number: null, doc_year: null, raw_nomor: cleaned };\n}\n\nfunction buildEntry(nomor, judul, tanggal) {\n  const cleanJudul = (judul || '')\n    .split(/\\d{1,2}\\s+\\w+\\s+\\d{4}/)[0]\n    .replace(/^tentang\\s+/i, '')\n    .trim();\n  return { ...parseNomor(nomor), judul: cleanJudul, tanggal: normalizeDate(tanggal) };\n}\n\nfunction parseRiwayat(text) {\n  const result = { mencabut: [], diubah_oleh: [], mengubah: [] };\n  let lastTanggal = null;\n\n  for (const line of (text || '').split(/\\r?\\n/).map(l => l.trim()).filter(Boolean)) {\n    const tanggalMatch = line.match(TANGGAL_LINE_RE);\n    if (tanggalMatch) { lastTanggal = tanggalMatch[1]; continue; }\n\n    let type = null;\n    let content = null;\n    if (/^Mengubah\\s+/i.test(line))      { type = 'mengubah';  content = line.match(/^Mengubah\\s+(.+?)\\s+tentang\\s+(.+)$/i); }\n    else if (/^Diubah\\s+/i.test(line))   { type = 'diubah_oleh'; content = line.match(/^Diubah\\s+(?:oleh\\s+)?(.+?)\\s+tentang\\s+(.+)$/i); }\n    else if (/^Mencabut\\s+/i.test(line)) { type = 'mencabut';  content = line.match(/^Mencabut\\s+(.+?)\\s+tentang\\s+(.+)$/i); }\n\n    if (type && content) {\n      result[type].push(buildEntry(content[1], content[2], lastTanggal));\n      lastTanggal = null;\n    }\n  }\n  return result;\n}\n\nconst raw        = $('ParseJDIHURL').first().json;\nconst resRiwayat = parseRiwayat(raw.riwayat_dokumen);\nconst resMengubah = parseRiwayat(raw.mengubah);\n\nlet dicabut_oleh = null;\nif (raw.dicabut_oleh) {\n  const m = raw.dicabut_oleh.match(/^(?:Dicabut\\s+(?:dengan\\s+)?)?(.+?)\\s+tentang\\s+(.+)$/i);\n  dicabut_oleh = m\n    ? buildEntry(m[1], m[2], raw.tanggal_pencabutan)\n    : buildEntry(raw.dicabut_oleh, null, raw.tanggal_pencabutan);\n}\n\nreturn [{\n  json: {\n    source_url:   raw.source_url,\n    status_hukum: raw.status_hukum || null,\n    dicabut_oleh,\n    diubah_oleh:  [...resRiwayat.diubah_oleh, ...resMengubah.diubah_oleh],\n    mencabut:     [...resRiwayat.mencabut, ...resMengubah.mencabut],\n    mengubah:     [...resRiwayat.mengubah, ...resMengubah.mengubah],\n  },\n}];\n"
+      },
+      "id": "d8fec2bc-6639-4228-bb50-f15fd6531bfb",
+      "name": "Parse Metadata Fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        608
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE tax_documents\nSET \n  ingestion_status      = 'COMPLETE',\n  total_chunks_ingested = sub.total_ingested,\n  updated_at            = NOW()\nFROM (\n  SELECT \n    COUNT(*) AS total_ingested,\n    source_url\n  FROM tax_documents \n  WHERE source_url = $1\n  GROUP BY source_url\n) AS sub\nWHERE tax_documents.source_url = sub.source_url;",
+        "options": {
+          "queryReplacement": "={{ [\n  $('ParseJDIHURL').first().json.source_url\n] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        4608,
+        352
+      ],
+      "id": "c8944439-2c7d-46fc-a614-ae61eacc39b1",
+      "name": "Finalizer",
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "P3my7gcL6yREmLDp",
+          "name": "Postgres account TaxRag"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "/**\n * NODE: Central Metadata Hub (V12 - Final Optimized)\n * Fungsi: Konsolidasi metadata dari API JDIH, PDF, HTML, dan URL.\n * Menjadi \"Single Source of Truth\" untuk seluruh node di bawahnya.\n */\n\n// --- 1. Helper Functions ---\n\n/**\n * Mengambil data node dengan aman tanpa memicu error jika node tidak dijalankan (branching)\n */\nfunction getSafeNodeData(nodeName) {\n  try {\n    const node = $(nodeName);\n    return node && node.first() ? node.first().json : {};\n  } catch (e) {\n    // Return objek kosong jika node tidak ditemukan dalam riwayat eksekusi\n    return {};\n  }\n}\n\n/**\n * Logika inferensi jenis pajak berdasarkan prioritas kata kunci\n */\nfunction inferJenisPajak(labels, current, title, docNumber) {\n  // Jika sudah ada definisi spesifik dari URL (selain Umum), gunakan itu\n  if (current && current !== 'Umum') return current;\n  \n  const searchStr = [\n    ...(Array.isArray(labels) ? labels : []),\n    (title || \"\"),\n    (docNumber || \"\")\n  ].join(' ').toUpperCase();\n\n  const rules = [\n    { pattern: /\\bPPH\\b|PAJAK PENGHASILAN/, value: 'PPh' },\n    { pattern: /\\bPPN\\b|PERTAMBAHAN NILAI/, value: 'PPN' },\n    { pattern: /\\bKUP\\b|KETENTUAN UMUM/, value: 'KUP' },\n    { pattern: /\\bCUKAI\\b|BEA MASUK|BEA KELUAR/, value: 'Bea_Cukai' },\n    { pattern: /\\bPBB\\b|BUMI DAN BANGUNAN/, value: 'PBB' },\n    { pattern: /\\bPPNBM\\b|PENJUALAN ATAS BARANG MEWAH/, value: 'PPnBM' }\n  ];\n\n  const match = rules.find(rule => rule.pattern.test(searchStr));\n  return match ? match.value : 'Umum';\n}\n\n// --- 2. Data Acquisition ---\n\nconst jdihUrl     = getSafeNodeData('ParseJDIHURL');\nconst jdihData    = getSafeNodeData('ParseJDIHResponse');\nconst extractPdf  = getSafeNodeData('ExtractPDF');\nconst extractHtml = getSafeNodeData('ExtractHTML');\nconst apiJdihFull = getSafeNodeData('GetAPIDataJDIH');\n\n// Ambil item pertama dari array data JDIH\nconst apiJdih     = apiJdihFull?.data?.[0] || {};\n\n// --- 3. Metadata Construction ---\n\nconst metadata = {\n  // Identitas Primer (Prioritas: API JDIH > Riwayat JSON > URL)\n  doc_id:         apiJdih.produk_hukum_id || jdihData.id || null,\n  doc_type:       apiJdih.bentuk || jdihData.doc_type || jdihUrl.docType || 'Umum',\n  doc_number:     apiJdih.nomor || jdihData.doc_number || jdihUrl.docNumber || null,\n  doc_year:       apiJdih.tahun || jdihData.doc_year || jdihUrl.docYear || null,\n  doc_title:      apiJdih.judul || jdihData.doc_title || extractPdf.title || \"\",\n  \n  // Data Abstrak & Kata Kunci (Rich Metadata)\n  abstrak_raw:    apiJdih.abstrak || null,\n  doc_keywords:   apiJdih.label || [], // Array label dari JDIH\n  \n  // Klasifikasi & Status\n  jenis_pajak:    inferJenisPajak(apiJdih.label, jdihUrl.jenis_pajak, apiJdih.judul, jdihUrl.docNumber),\n  status_hukum:   (apiJdih.status || jdihData.status_hukum || 'BERLAKU').toUpperCase(),\n  doc_category:   'Umum', // Slot untuk klasifikasi kategori oleh LLM selanjutnya\n  \n  // Informasi Tanggal & Sumber\n  tanggal_penetapan: apiJdih.tanggal_penetapan || jdihData.tanggal_penetapan || null,\n  riwayat_dokumen:   jdihData.riwayat_dokumen || null,\n  source_url:        jdihData.source_url || jdihUrl.sourceUrl || null,\n  \n  // Flags untuk Database\n  is_consolidated: !!apiJdih.konsolidasi,\n  processed_at:    new Date().toISOString()\n};\n\n// --- 4. Text Selection Logic ---\n\n// Memilih teks mentah. Prioritas HTML karena strukturnya lebih bersih untuk AI Ingestion.\nconst rawFullText = (extractHtml.text || extractPdf.text || \"\").trim();\n\n// --- 5. Return Output n8n ---\n\nreturn [{\n  json: {\n    raw_full_text: rawFullText,\n    metadata: metadata\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        864,
+        176
+      ],
+      "id": "81deaaad-0777-4633-aff4-462973ee4882",
+      "name": "MetadataHub"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════════════════════\n// METADATA ENRICHER — V4 MULTI-LABEL SEMANTIC TYPES\n// FIX-2: semantic_type sekarang ARRAY (multi-label), bukan single string.\n// Satu pasal bisa sekaligus 'obligation' + 'sanction' + 'timeline'.\n// ════════════════════════════════════════════════════════════════════════\n\nconst items = $input.all();\n\n// ───────────────────────────────────────────────────────────────────────\n// REGEX\n// ───────────────────────────────────────────────────────────────────────\n\nconst AYAT_RE          = /ayat\\s*\\((\\d+)\\)/gi;\nconst PASAL_REF_RE     = /Pasal\\s+(\\d+[A-Z]?)/gi;\nconst HURUF_RE         = /huruf\\s+([a-z])/gi;\n\nconst DEFINISI_RE      = /yang\\s+selanjutnya\\s+disebut|yang\\s+dimaksud\\s+dengan|adalah/i;\nconst SANKSI_RE        = /dikenai\\s+sanksi|sanksi\\s+administratif|dipidana|pidana|denda/i;\nconst KEWAJIBAN_RE     = /\\bwajib\\b|\\bharus\\b|berkewajiban/i;\nconst LARANGAN_RE      = /\\bdilarang\\b|tidak\\s+boleh/i;\nconst PENGECUALIAN_RE  = /dikecualikan|kecuali(?!\\s+itu)|selain\\s+(?:hal|dalam)/i;\nconst PROSEDUR_RE      = /permohonan|pengajuan|pelaporan|pendaftaran|penyampaian/i;\nconst BATAS_WAKTU_RE   = /paling\\s+lambat|jangka\\s+waktu|paling\\s+lama|paling\\s+singkat/i;\n\n// ───────────────────────────────────────────────────────────────────────\n// HELPERS\n// ───────────────────────────────────────────────────────────────────────\n\nfunction unique(arr) { return [...new Set(arr)]; }\n\nfunction extractAyat(text) {\n  const results = []; let m;\n  while ((m = AYAT_RE.exec(text)) !== null) results.push(`ayat (${m[1]})`);\n  return unique(results);\n}\n\nfunction extractPasalRefs(text, selfPasalNumber) {\n  const results = []; let m;\n  while ((m = PASAL_REF_RE.exec(text)) !== null) results.push(`Pasal ${m[1]}`);\n  const all = unique(results);\n  // FIX-B: buang self-reference (header pasal itu sendiri)\n  return selfPasalNumber\n    ? all.filter(ref => ref !== selfPasalNumber)\n    : all;\n}\n\nfunction extractHuruf(text) {\n  const results = []; let m;\n  while ((m = HURUF_RE.exec(text)) !== null) results.push(`huruf ${m[1]}`);\n  return unique(results);\n}\n\n// FIX-2: Multi-label — evaluasi SEMUA kondisi, hasilkan array.\n// Tidak ada early return; setiap flag independen.\nfunction detectSemanticTypes(text, pasalNumber) {\n  const types = [];\n  const lower = text.toLowerCase();\n\n  // Definisi: Pasal 1 atau pola umum\n  if (\n    (pasalNumber === 'Pasal 1' && (lower.includes('adalah') || lower.includes('yang dimaksud'))) ||\n    DEFINISI_RE.test(text)\n  ) {\n    types.push('definition');\n  }\n\n  if (SANKSI_RE.test(text))       types.push('sanction');\n  if (LARANGAN_RE.test(text))     types.push('prohibition');\n  if (KEWAJIBAN_RE.test(text))    types.push('obligation');\n  if (PENGECUALIAN_RE.test(text)) types.push('exception');\n  if (PROSEDUR_RE.test(text))     types.push('procedure');\n  if (BATAS_WAKTU_RE.test(text))  types.push('timeline');\n\n  return types.length > 0 ? unique(types) : ['general'];\n}\n\n// Boost dihitung dari semua tipe yang terdeteksi (kumulatif, max 2.0)\nconst BOOST_MAP = {\n  definition:  0.25,\n  sanction:    0.30,\n  obligation:  0.20,\n  prohibition: 0.20,\n  exception:   0.15,\n  timeline:    0.10,\n};\n\nfunction calculateRetrievalBoost(semanticTypes, text) {\n  let boost = 1.0;\n  for (const t of semanticTypes) {\n    boost += (BOOST_MAP[t] || 0);\n  }\n  // Extra boost jika banyak referensi silang\n  if (extractPasalRefs(text).length >= 3) boost += 0.10;\n  return Number(Math.min(boost, 2.0).toFixed(2));\n}\n\nfunction generateMiniSummary(text) {\n  const cleaned = text.replace(/\\n+/g, ' ').replace(/\\s+/g, ' ').trim();\n  return cleaned.length <= 220 ? cleaned : cleaned.slice(0, 220) + '...';\n}\n\n// ───────────────────────────────────────────────────────────────────────\n// MAIN\n// ───────────────────────────────────────────────────────────────────────\n\nreturn items.map(item => {\n  const json = item.json;\n  const text = json.chunk_text || '';\n\n  const semanticTypes   = detectSemanticTypes(text, json.pasal_number);\n  // FIX-B: pass pasal_number agar self-reference difilter\n  const outgoingRefs    = extractPasalRefs(text, json.pasal_number);\n  const ayatNumbers     = extractAyat(text);\n  const hurufRefs       = extractHuruf(text);\n  const retrievalBoost  = calculateRetrievalBoost(semanticTypes, text);\n\n  // Untuk backward compat: semantic_type (string) = tipe prioritas tertinggi\n  const PRIORITY_ORDER  = ['sanction','prohibition','obligation','definition','exception','procedure','timeline','general'];\n  const primaryType     = PRIORITY_ORDER.find(t => semanticTypes.includes(t)) || semanticTypes[0];\n\n  return {\n    json: {\n      ...json,\n\n      // FIX-2: multi-label array (field baru)\n      semantic_types:       semanticTypes,\n      // backward compat: string untuk node downstream yang pakai semantic_type\n      semantic_type:        primaryType,\n\n      // Boolean flags — sekarang berdasarkan array\n      contains_definition:  semanticTypes.includes('definition'),\n      contains_sanction:    semanticTypes.includes('sanction'),\n      contains_exception:   semanticTypes.includes('exception'),\n      contains_obligation:  semanticTypes.includes('obligation'),\n      contains_prohibition: semanticTypes.includes('prohibition'),\n      contains_procedure:   semanticTypes.includes('procedure'),\n      contains_timeline:    semanticTypes.includes('timeline'),\n\n      outgoing_references:  outgoingRefs,\n      ayat_numbers:         ayatNumbers,\n      huruf_references:     hurufRefs,\n\n      hierarchy_level:      'pasal_chunk',\n      retrieval_boost:      retrievalBoost,\n      chunk_summary:        generateMiniSummary(text),\n      metadata_enriched_at: new Date().toISOString(),\n    }\n  };\n});"
+      },
+      "id": "05eb66c5-a880-4db2-9cc0-de9540730dde",
+      "name": "Metadata Enricher",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════════════════════\n// SEMANTIC ANALYZER — V6 ENTERPRISE\n//\n// FIXES:\n// ✅ preserve hierarchy_level\n// ✅ definition-safe classification\n// ✅ contextual semantic detection\n// ✅ retrieval boosting\n// ✅ hierarchy normalization\n// ✅ legal entity extraction\n// ✅ false positive prevention\n// ════════════════════════════════════════════════════════════════════════\n\nconst items = $input.all();\n\n// ════════════════════════════════════════\n// HELPERS\n// ════════════════════════════════════════\n\nfunction hasAny(text='', patterns=[]) {\n\n  return patterns.some(p => p.test(text));\n}\n\nfunction estimateTokens(text='') {\n\n  return Math.ceil(text.length / 4);\n}\n\n// ════════════════════════════════════════\n// NORMALIZE HIERARCHY\n// ════════════════════════════════════════\n\nfunction normalizeHierarchy(j) {\n\n  // definition chunks MUST stay definition_item\n\n  if (\n    j.ast_type === 'DEFINITION' ||\n    j.is_definition_chunk === true\n  ) {\n\n    return 'definition_item';\n  }\n\n  // ayat\n\n  if (\n    j.hierarchy_level === 'ayat'\n  ) {\n    return 'ayat';\n  }\n\n  // default\n\n  return 'pasal_chunk';\n}\n\n// ════════════════════════════════════════\n// TIMELINE DETECTOR\n// ════════════════════════════════════════\n\nfunction detectTimeline(text='') {\n\n  const t = text.toLowerCase();\n\n  const legalReferenceOnly =\n    /undang-undang nomor\\s+\\d+\\s+tahun\\s+\\d{4}/i.test(t);\n\n  if (legalReferenceOnly) {\n\n    const proceduralTimeline =\n      hasAny(t, [\n\n        /jangka waktu/i,\n        /hari kerja/i,\n        /dalam waktu/i,\n        /paling lama/i,\n        /terhitung sejak/i,\n        /jatuh tempo/i,\n        /sebelum tanggal/i,\n        /setelah tanggal/i,\n        /\\d+\\s+hari/i,\n        /\\d+\\s+bulan/i\n      ]);\n\n    return proceduralTimeline;\n  }\n\n  return hasAny(t, [\n\n    /jangka waktu/i,\n    /hari kerja/i,\n    /dalam waktu/i,\n    /paling lama/i,\n    /terhitung sejak/i,\n    /jatuh tempo/i,\n    /sebelum tanggal/i,\n    /setelah tanggal/i,\n    /\\d+\\s+hari/i,\n    /\\d+\\s+bulan/i,\n    /\\d+\\s+tahun pajak/i\n  ]);\n}\n\n// ════════════════════════════════════════\n// SEMANTIC ANALYZER\n// ════════════════════════════════════════\n\nfunction analyzeSemantic(j) {\n\n  const text =\n    (j.chunk_text || '').toLowerCase();\n\n  const semanticTypes = [];\n\n  const isDefinition =\n    j.ast_type === 'DEFINITION' ||\n    j.is_definition_chunk === true;\n\n  // DEFINITIONS HAVE PRIORITY\n\n  if (isDefinition) {\n\n    semanticTypes.push('definition');\n\n    return semanticTypes;\n  }\n\n  // obligation\n\n  if (\n    hasAny(text, [\n      /wajib/i,\n      /harus/i\n    ])\n  ) {\n    semanticTypes.push('obligation');\n  }\n\n  // prohibition\n\n  if (\n    hasAny(text, [\n      /dilarang/i,\n      /tidak boleh/i\n    ])\n  ) {\n    semanticTypes.push('prohibition');\n  }\n\n  // sanction\n\n  if (\n    hasAny(text, [\n      /sanksi/i,\n      /pidana/i,\n      /denda/i\n    ])\n  ) {\n    semanticTypes.push('sanction');\n  }\n\n  // procedure\n\n  if (\n    hasAny(text, [\n      /permohonan/i,\n      /pengajuan/i,\n      /ditetapkan/i,\n      /menerbitkan/i\n    ])\n  ) {\n    semanticTypes.push('procedure');\n  }\n\n  // exception\n\n  if (\n    hasAny(text, [\n      /dikecualikan/i,\n      /kecuali/i\n    ])\n  ) {\n    semanticTypes.push('exception');\n  }\n\n  // timeline\n\n  if (\n    detectTimeline(text)\n  ) {\n    semanticTypes.push('timeline');\n  }\n\n  return semanticTypes;\n}\n\n// ════════════════════════════════════════\n// MAIN\n// ════════════════════════════════════════\n\nreturn items.map(item => {\n\n  const j = item.json;\n\n  const semanticTypes =\n    analyzeSemantic(j);\n\n  const semanticType =\n    semanticTypes[0] || 'general';\n\n  // normalize hierarchy\n\n  const normalizedHierarchy =\n    normalizeHierarchy(j);\n\n  // retrieval boost\n\n  let retrievalBoost = 1.0;\n\n  if (semanticTypes.includes('definition')) {\n    retrievalBoost += 0.7;\n  }\n\n  if (semanticTypes.includes('sanction')) {\n    retrievalBoost += 0.5;\n  }\n\n  if (semanticTypes.includes('procedure')) {\n    retrievalBoost += 0.4;\n  }\n\n  // legal entities\n\n  const legalEntities =\n    (\n      j.chunk_text.match(\n        /Undang-Undang Nomor\\s+\\d+\\s+Tahun\\s+\\d{4}/gi\n      ) || []\n    );\n\n  return {\n    json: {\n\n      ...j,\n\n      // FIXED HIERARCHY\n      hierarchy_level:\n        normalizedHierarchy,\n\n      semantic_types:\n        semanticTypes,\n\n      semantic_type:\n        semanticType,\n\n      contains_definition:\n        semanticTypes.includes('definition'),\n\n      contains_sanction:\n        semanticTypes.includes('sanction'),\n\n      contains_exception:\n        semanticTypes.includes('exception'),\n\n      contains_obligation:\n        semanticTypes.includes('obligation'),\n\n      contains_prohibition:\n        semanticTypes.includes('prohibition'),\n\n      contains_procedure:\n        semanticTypes.includes('procedure'),\n\n      contains_timeline:\n        semanticTypes.includes('timeline'),\n\n      retrieval_boost:\n        retrievalBoost,\n\n      legal_entities:\n        legalEntities,\n\n      semantic_importance:\n        retrievalBoost,\n\n      semantic_token_estimate:\n        estimateTokens(j.chunk_text),\n\n      semantic_analyzer_version:\n        'v6_hierarchy_safe',\n\n      semantic_analyzed_at:\n        new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "c55b02fa-5183-48d7-88bf-3442ccb09293",
+      "name": "Semantic Analyzer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2288,
+        176
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ═══════════════════════════════════════════════════════════════\n// Domain Scoring Engine — V2 (Improved Primary Domain Logic)\n// For n8n Code Node\n// ═══════════════════════════════════════════════════════════════\n\nconst items = $input.all();\n\n// ───────────────────────────────────────────────────────────────\n// DOMAIN PATTERNS\n// ───────────────────────────────────────────────────────────────\nconst DOMAIN_PATTERNS = {\n\n  PPh: [\n    /Pajak Penghasilan/gi,\n    /\\bPPh\\b/gi,\n    /Pasal\\s+21/gi,\n    /Pasal\\s+22/gi,\n    /Pasal\\s+23/gi,\n    /Pasal\\s+25/gi,\n    /Pasal\\s+26/gi,\n    /Pasal\\s+29/gi,\n  ],\n\n  PPN: [\n    /Pajak Pertambahan Nilai/gi,\n    /\\bPPN\\b/gi,\n  ],\n\n  PPnBM: [\n    /\\bPPnBM\\b/gi,\n    /Pajak Penjualan atas Barang Mewah/gi,\n  ],\n\n  \"Bea Meterai\": [\n    /Bea Meterai/gi,\n  ],\n\n  PBB: [\n    /Pajak Bumi dan Bangunan/gi,\n    /\\bPBB\\b/gi,\n  ],\n\n  KUP: [\n    /Ketentuan Umum dan Tata Cara Perpajakan/gi,\n    /\\bKUP\\b/gi,\n  ],\n\n  Cukai: [\n    /Cukai/gi,\n  ],\n\n  \"Pajak Karbon\": [\n    /Pajak Karbon/gi,\n  ]\n};\n\n// ───────────────────────────────────────────────────────────────\n// HELPERS\n// ───────────────────────────────────────────────────────────────\nfunction countMatches(text, regex) {\n  const matches = text.match(regex);\n  return matches ? matches.length : 0;\n}\n\nfunction detectDomainScores(text) {\n\n  const scores = {};\n\n  for (const [domain, patterns] of Object.entries(DOMAIN_PATTERNS)) {\n\n    let score = 0;\n\n    for (const pattern of patterns) {\n      score += countMatches(text, pattern);\n    }\n\n    scores[domain] = score;\n  }\n\n  return scores;\n}\n\n// ───────────────────────────────────────────────────────────────\n// PRIMARY DOMAIN\n// ───────────────────────────────────────────────────────────────\nfunction getPrimaryDomain(scores) {\n\n  const sorted = Object.entries(scores)\n    .filter(([_, score]) => score > 0)\n    .sort((a, b) => b[1] - a[1]);\n\n  if (!sorted.length) {\n    return 'UMUM';\n  }\n\n  // Hanya MULTI_DOMAIN jika benar-benar identik\n  if (\n    sorted.length > 1 &&\n    sorted[0][1] === sorted[1][1]\n  ) {\n    return 'MULTI_DOMAIN';\n  }\n\n  return sorted[0][0];\n}\n\n// ───────────────────────────────────────────────────────────────\n// SECONDARY DOMAINS\n// ───────────────────────────────────────────────────────────────\nfunction getSecondaryDomains(scores, primary) {\n\n  return Object.entries(scores)\n    .filter(([domain, score]) =>\n      score > 0 &&\n      domain !== primary\n    )\n    .map(([domain]) => domain);\n}\n\n// ───────────────────────────────────────────────────────────────\n// CONFIDENCE\n// ───────────────────────────────────────────────────────────────\nfunction calculateConfidence(scores) {\n\n  const values = Object.values(scores)\n    .filter(v => v > 0)\n    .sort((a, b) => b - a);\n\n  if (values.length === 0) return 0;\n\n  if (values.length === 1) return 1;\n\n  const top = values[0];\n  const second = values[1];\n\n  return Number(\n    (top / (top + second)).toFixed(2)\n  );\n}\n\n// ───────────────────────────────────────────────────────────────\n// EXECUTION\n// ───────────────────────────────────────────────────────────────\nreturn items.map(item => {\n\n  const json = item.json;\n\n  // Gabungkan semua text semantic\n  const text = `\n${json.chunk_text || ''}\n${json.chunk_summary || ''}\n${(json.legal_concept_tags || []).join(' ')}\n${json.doc_title || ''}\n`;\n\n  // ─────────────────────────────────────────────────────────────\n  // DOMAIN SCORING\n  // ─────────────────────────────────────────────────────────────\n  const domainScores = detectDomainScores(text);\n\n  // ─────────────────────────────────────────────────────────────\n  // PRIMARY DOMAIN\n  // ─────────────────────────────────────────────────────────────\n  const primaryDomain =\n    getPrimaryDomain(domainScores);\n\n  // ─────────────────────────────────────────────────────────────\n  // SECONDARY DOMAINS\n  // ─────────────────────────────────────────────────────────────\n  const secondaryDomains =\n    getSecondaryDomains(domainScores, primaryDomain);\n\n  // ─────────────────────────────────────────────────────────────\n  // DOMAIN TAGS\n  // ─────────────────────────────────────────────────────────────\n  const domainTags =\n    Object.entries(domainScores)\n      .filter(([_, score]) => score > 0)\n      .map(([domain]) => domain);\n\n  // ─────────────────────────────────────────────────────────────\n  // CONFIDENCE SCORE\n  // ─────────────────────────────────────────────────────────────\n  const confidence =\n    calculateConfidence(domainScores);\n\n  // ─────────────────────────────────────────────────────────────\n  // OUTPUT\n  // ─────────────────────────────────────────────────────────────\n  return {\n    json: {\n\n      ...json,\n\n      domain_scores: domainScores,\n\n      primary_domain: primaryDomain,\n\n      secondary_domains: secondaryDomains,\n\n      domain_tags: domainTags,\n\n      domain_confidence: confidence,\n\n      domain_scored_at: new Date().toISOString(),\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2784,
+        176
+      ],
+      "id": "68bcd24c-f597-447e-9c5f-42e1baf126cb",
+      "name": "Domain Scoring Engine"
+    },
+    {
+      "parameters": {
+        "jsCode": "const failedChunks = [];\n\nfor (const item of items) {\n\n  const data = item.json;\n\n  failedChunks.push({\n    failed_at: new Date().toISOString(),\n\n    relational_id: data.relational_id || null,\n    pasal_number: data.pasal_number || null,\n\n    quality_score: data.quality_score || 0,\n\n    quality_flags: data.quality_flags || [],\n\n    primary_domain: data.primary_domain || null,\n\n    chunk_preview: (data.chunk_text || \"\")\n      .substring(0, 300),\n\n    total_characters: (data.chunk_text || \"\").length\n  });\n}\n\nreturn failedChunks.map(x => ({\n  json: x\n}));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        752
+      ],
+      "id": "32dc42ab-da53-40c9-a153-e5d814fc5096",
+      "name": "Invalid Chunk Logger"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "5cb88b59-5dea-4e7a-9711-151b2d66412d",
+              "leftValue": "={{ $json.embedding_ready }}",
+              "rightValue": 0.6,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "0d353581-82dd-4c05-989a-16e9bf4cec79",
+      "name": "Quality check?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2960,
+        432
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════════════════════\n// QUALITY GATE — V2\n// FIX-4: Tambah flag INCOMPLETE_ARTICLE untuk mendeteksi pasal terpotong.\n//        Scoring disesuaikan dengan multi-label semantic_types.\n// ════════════════════════════════════════════════════════════════════════\n\nconst results = [];\n\n// Pola akhiran pasal yang lengkap secara hukum\nconst VALID_ENDINGS_RE  = /[.;]\\s*$/;\n// Header pasal (indikasi ada judul tapi konten bisa terpotong)\nconst PASAL_HEADER_RE   = /^#{1,3}\\s+Pasal\\s+\\d+[A-Z]?/m;\n// Ayat atau huruf di akhir chunk (tanda masih ada lanjutan)\nconst DANGLING_LIST_RE  = /\\b(?:huruf|angka)\\s+[a-z]\\s*[;:]?\\s*$/i;\n\nfunction isIncompleteArticle(text) {\n  // Heuristik 1: ada header Pasal tapi tidak diakhiri tanda baca lengkap\n  if (PASAL_HEADER_RE.test(text) && !VALID_ENDINGS_RE.test(text)) return true;\n  // Heuristik 2: chunk berakhir dengan daftar menggantung (huruf a; huruf b:)\n  if (DANGLING_LIST_RE.test(text)) return true;\n  // Heuristik 3: chunk dimulai di tengah kalimat (sudah ada BROKEN_START tapi\n  // kita juga cek jika tidak ada header sama sekali untuk chunk panjang)\n  if (text.length > 300 && !PASAL_HEADER_RE.test(text) && !VALID_ENDINGS_RE.test(text)) return true;\n  return false;\n}\n\nfor (const item of items) {\n  const data = item.json;\n  const text = (data.chunk_text || '').trim();\n\n  // ─── BASIC METRICS ───────────────────────────────────────────────────\n  const textLength = text.length;\n  const wordCount  = text.split(/\\s+/).length;\n\n  // ─── QUALITY FLAGS ───────────────────────────────────────────────────\n  const qualityFlags = [];\n\n  if (textLength < 120)  qualityFlags.push('TOO_SHORT');\n  if (wordCount < 20)    qualityFlags.push('LOW_WORD_COUNT');\n\n  if (\n    text.startsWith('.') || text.startsWith(',') ||\n    text.startsWith(')') || text.startsWith('dan ') ||\n    text.startsWith('atau ')\n  ) qualityFlags.push('BROKEN_START');\n\n  if (!data.primary_domain)  qualityFlags.push('MISSING_DOMAIN');\n  if (!data.semantic_type)   qualityFlags.push('MISSING_SEMANTIC_TYPE');\n\n  // FIX-4: Deteksi pasal terpotong\n  if (isIncompleteArticle(text)) qualityFlags.push('INCOMPLETE_ARTICLE');\n\n  // ─── QUALITY SCORE ────────────────────────────────────────────────────\n  let qualityScore = 1.0;\n  qualityScore -= qualityFlags.length * 0.15;\n\n  // Bonus dari multi-label semantic_types\n  const sTypes = data.semantic_types || [];\n  if (sTypes.includes('definition'))  qualityScore += 0.05;\n  if (sTypes.includes('sanction'))    qualityScore += 0.10;\n  if ((data.semantic_importance || 1) > 1.3) qualityScore += 0.05;\n\n  // Penalty ekstra untuk pasal terpotong (konten tidak dapat dipercaya sepenuhnya)\n  if (qualityFlags.includes('INCOMPLETE_ARTICLE')) qualityScore -= 0.10;\n\n  qualityScore = Math.max(0, Math.min(1, Number(qualityScore.toFixed(2))));\n\n  // ─── EMBEDDING ELIGIBILITY ────────────────────────────────────────────\n  // INCOMPLETE_ARTICLE tidak otomatis blokir embedding (data parsial masih berguna)\n  // tapi threshold lebih ketat jika ada flag tersebut.\n  const criticalFlags  = qualityFlags.filter(f => f !== 'INCOMPLETE_ARTICLE');\n  const embeddingReady =\n    criticalFlags.length <= 1 &&\n    qualityScore >= (qualityFlags.includes('INCOMPLETE_ARTICLE') ? 0.65 : 0.55);\n\n  results.push({\n    json: {\n      ...data,\n      quality_flags:       qualityFlags,\n      quality_score:       qualityScore,\n      embedding_ready:     embeddingReady,\n      quality_checked_at:  new Date().toISOString(),\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2992,
+        176
+      ],
+      "id": "76b4d2d7-d483-4344-984f-dea8fc801be6",
+      "name": "Quality Gate"
+    },
+    {
+      "parameters": {
+        "jsCode": "function normalizeTerm(term) {\n  if (!term) return \"\";\n\n  return term\n    .toLowerCase()\n    .replace(/[^\\w\\s-]/g, \"\")\n    .replace(/\\s+/g, \" \")\n    .trim();\n}\n\nfunction uniqueArray(arr) {\n  return [...new Set(arr.filter(Boolean))];\n}\n\nfunction buildAliases(term) {\n\n  if (!term) return [];\n\n  const aliases = [];\n  const upper = term.toUpperCase();\n\n  // =========================\n  // KUP\n  // =========================\n  if (\n    upper.includes(\"KETENTUAN UMUM DAN TATA CARA PERPAJAKAN\")\n  ) {\n    aliases.push(\"UU KUP\");\n    aliases.push(\"KUP\");\n    aliases.push(\"Ketentuan Umum Perpajakan\");\n  }\n\n  // =========================\n  // PPN\n  // =========================\n  if (\n    upper.includes(\"PAJAK PERTAMBAHAN NILAI\")\n  ) {\n    aliases.push(\"UU PPN\");\n    aliases.push(\"PPN\");\n  }\n\n  // =========================\n  // PKP\n  // =========================\n  if (\n    upper.includes(\"PENGUSAHA KENA PAJAK\")\n  ) {\n    aliases.push(\"PKP\");\n  }\n\n  // =========================\n  // NPWP\n  // =========================\n  if (\n    upper.includes(\"NOMOR POKOK WAJIB PAJAK\")\n  ) {\n    aliases.push(\"NPWP\");\n  }\n\n  // =========================\n  // SKPKB\n  // =========================\n  if (\n    upper.includes(\"SURAT KETETAPAN PAJAK KURANG BAYAR\")\n  ) {\n    aliases.push(\"SKPKB\");\n  }\n\n  // =========================\n  // STP\n  // =========================\n  if (\n    upper.includes(\"SURAT TAGIHAN PAJAK\")\n  ) {\n    aliases.push(\"STP\");\n  }\n\n  return uniqueArray(aliases);\n}\n\nfunction buildChunkHeadline(chunk) {\n\n  const term =\n    chunk.definition_term ||\n    chunk.pasal_title ||\n    \"Dokumen Hukum\";\n\n  return `Definisi ${term} dalam ${chunk.doc_number || \"\"} Pasal ${chunk.pasal_number || \"\"}`;\n}\n\nfunction buildCitationShort(chunk) {\n\n  return `${chunk.doc_number || \"\"} Pasal ${chunk.pasal_number || \"\"} Definisi ${chunk.definition_number || \"\"}`;\n}\n\nfunction buildCitationPath(chunk) {\n\n  const hierarchy = Array.isArray(chunk.hierarchy_path)\n    ? chunk.hierarchy_path.join(\" > \")\n    : \"\";\n\n  return `${chunk.doc_number || \"\"} > ${hierarchy}`;\n}\n\nfunction buildVectorReadyText(chunk, aliases) {\n\n  const sections = [];\n\n  if (chunk.definition_term) {\n    sections.push(chunk.definition_term);\n  }\n\n  if (aliases.length) {\n    sections.push(aliases.join(\"\\n\"));\n  }\n\n  if (chunk.doc_number) {\n    sections.push(chunk.doc_number);\n  }\n\n  if (chunk.doc_title) {\n    sections.push(chunk.doc_title);\n  }\n\n  if (chunk.chunk_text) {\n    sections.push(chunk.chunk_text);\n  }\n\n  return sections.join(\"\\n\\n\").trim();\n}\n\nfunction buildSearchText(chunk, aliases) {\n\n  const parts = [];\n\n  if (chunk.definition_term) {\n    parts.push(chunk.definition_term);\n  }\n\n  aliases.forEach(a => parts.push(a));\n\n  if (chunk.doc_number) {\n    parts.push(chunk.doc_number);\n  }\n\n  if (chunk.doc_title) {\n    parts.push(chunk.doc_title);\n  }\n\n  if (chunk.chunk_text) {\n    parts.push(chunk.chunk_text);\n  }\n\n  return parts.join(\" \").replace(/\\s+/g, \" \").trim();\n}\n\nfunction buildEmbeddingInput(chunk, aliases) {\n\n  const lines = [];\n\n  lines.push(\n    `Definisi ${chunk.definition_term || \"\"} dalam ${chunk.doc_number || \"\"} Pasal ${chunk.pasal_number || \"\"}.`\n  );\n\n  if (aliases.length) {\n    lines.push(\n      `Alias: ${aliases.join(\", \")}`\n    );\n  }\n\n  if (chunk.doc_title) {\n    lines.push(\n      `Dokumen: ${chunk.doc_title}`\n    );\n  }\n\n  if (chunk.chunk_text) {\n    lines.push(\n      `Isi:\\n${chunk.chunk_text}`\n    );\n  }\n\n  return lines.join(\"\\n\\n\").trim();\n}\n\nreturn items.map(item => {\n\n  const chunk = item.json;\n\n  // =========================\n  // ALIAS\n  // =========================\n  const aliases = buildAliases(\n    chunk.definition_term || \"\"\n  );\n\n  // =========================\n  // NORMALIZED TERMS\n  // =========================\n  const normalizedTerms = uniqueArray([\n    normalizeTerm(chunk.definition_term || \"\"),\n    ...aliases.map(a => normalizeTerm(a))\n  ]);\n\n  // =========================\n  // HEADLINE\n  // =========================\n  chunk.chunk_headline =\n    buildChunkHeadline(chunk);\n\n  // =========================\n  // CITATION\n  // =========================\n  chunk.citation_short =\n    buildCitationShort(chunk);\n\n  chunk.citation_path =\n    buildCitationPath(chunk);\n\n  // =========================\n  // ALIAS STORAGE\n  // =========================\n  chunk.canonical_aliases =\n    aliases;\n\n  // =========================\n  // NORMALIZED TERMS\n  // =========================\n  chunk.normalized_terms =\n    normalizedTerms;\n\n  // =========================\n  // VECTOR READY TEXT\n  // =========================\n  chunk.vector_ready_text =\n    buildVectorReadyText(chunk, aliases);\n\n  // =========================\n  // RETRIEVAL TEXT\n  // =========================\n  chunk.retrieval_text =\n    buildVectorReadyText(chunk, aliases);\n\n  // =========================\n  // BM25 SEARCH TEXT\n  // =========================\n  chunk.search_text =\n    buildSearchText(chunk, aliases);\n\n  // =========================\n  // EMBEDDING INPUT\n  // =========================\n  chunk.embedding_input =\n    buildEmbeddingInput(chunk, aliases);\n\n  // =========================\n  // ENTITY TYPE\n  // =========================\n  chunk.entity_type =\n    \"legal_definition\";\n\n  // =========================\n  // EFFECTIVE STATUS\n  // =========================\n  chunk.effective_status =\n    chunk.status_hukum === \"BERLAKU\"\n      ? \"active\"\n      : \"inactive\";\n\n  // =========================\n  // DOCUMENT FAMILY\n  // =========================\n  if (!chunk.document_family) {\n\n    if (\n      chunk.doc_number &&\n      chunk.doc_number.includes(\"PMK\")\n    ) {\n      chunk.document_family = \"PMK\";\n    }\n\n    else if (\n      chunk.doc_number &&\n      chunk.doc_number.includes(\"PER\")\n    ) {\n      chunk.document_family = \"PER\";\n    }\n\n    else {\n      chunk.document_family = \"UNKNOWN\";\n    }\n  }\n\n  // =========================\n  // LEGAL DOMAIN\n  // =========================\n  if (!chunk.legal_domain) {\n    chunk.legal_domain = \"perpajakan\";\n  }\n\n  // =========================\n  // YEAR\n  // =========================\n  if (!chunk.effective_year) {\n    chunk.effective_year =\n      chunk.doc_year || null;\n  }\n\n  // =========================\n  // PRIORITY\n  // =========================\n  if (!chunk.search_priority) {\n\n    let priority = 50;\n\n    if (chunk.is_definition_chunk) {\n      priority += 25;\n    }\n\n    if (chunk.contains_obligation) {\n      priority += 10;\n    }\n\n    if (chunk.contains_sanction) {\n      priority += 15;\n    }\n\n    chunk.search_priority = priority;\n  }\n\n  // =========================\n  // CHUNK TYPE PRIORITY\n  // =========================\n  if (!chunk.chunk_type_priority) {\n\n    if (chunk.semantic_type === \"definition\") {\n      chunk.chunk_type_priority = 7;\n    }\n\n    else if (\n      chunk.semantic_type === \"procedure\"\n    ) {\n      chunk.chunk_type_priority = 8;\n    }\n\n    else {\n      chunk.chunk_type_priority = 5;\n    }\n  }\n\n  // =========================\n  // VERSIONING\n  // =========================\n  chunk.embedding_builder_version =\n    \"vFinal_legal_rag_enterprise\";\n\n  chunk.embedding_built_at =\n    new Date().toISOString();\n\n  return item;\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2560,
+        176
+      ],
+      "id": "45281f07-0233-4e59-9e38-0c5dd84af88a",
+      "name": "Embeding Builder"
+    },
+    {
+      "parameters": {
+        "jsCode": "const crypto = require('crypto');\n\nreturn $input.all().map(item => {\n\n  const text =\n    item.json.chunk_text;\n\n  const hash =\n    crypto\n      .createHash('sha256')\n      .update(text)\n      .digest('hex');\n\n  return {\n    json: {\n      ...item.json,\n      chunk_hash: hash\n    }\n  };\n});"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        4176,
+        352
+      ],
+      "id": "9ee528f5-414c-4fc7-b039-d7cf75811332",
+      "name": "FINGERPRINT HASH"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════════════════════\n// EMBEDDING QUALITY VALIDATOR — V3\n// Refactor Upgrade\n//\n// Features:\n// ✅ relational_id pairing\n// ✅ dimension validation\n// ✅ L2 norm validation\n// ✅ NaN detection\n// ✅ Infinity detection\n// ✅ variance detection\n// ✅ contextual embedding validation\n// ✅ embedding fingerprint preview\n// ✅ embedding version tagging\n// ════════════════════════════════════════════════════════════════════════\n\nconst EXPECTED_DIM = 1536;\n\nconst MIN_L2_NORM = 0.1;\n\nconst MIN_VARIANCE = 1e-6;\n\nconst EMBEDDING_MODEL = 'text-embedding-3-small';\n\nconst EMBEDDING_PIPELINE_VERSION = 'v3';\n\n// ════════════════════════════════════════\n// LOAD QUALITY GATE ITEMS\n// ════════════════════════════════════════\n\nconst qualityGateItems = $('Quality check?').all();\n\nconst qualityMap = {};\n\nfor (const q of qualityGateItems) {\n\n  const rid = q.json.relational_id;\n\n  if (rid) {\n    qualityMap[rid] = q.json;\n  }\n}\n\n// ════════════════════════════════════════\n// VALIDATION FUNCTIONS\n// ════════════════════════════════════════\n\nfunction validateEmbedding(vec, chunkId) {\n\n  // NULL / TYPE CHECK\n\n  if (!vec || !Array.isArray(vec)) {\n    throw new Error(\n      `[EmbeddingValidator] Embedding null/bukan array pada chunk: ${chunkId}`\n    );\n  }\n\n  // DIMENSION CHECK\n\n  if (vec.length !== EXPECTED_DIM) {\n    throw new Error(\n      `[EmbeddingValidator] Dimensi salah: expected ${EXPECTED_DIM}, got ${vec.length} (Chunk: ${chunkId})`\n    );\n  }\n\n  // NaN CHECK\n\n  if (vec.some(v => Number.isNaN(v))) {\n    throw new Error(\n      `[EmbeddingValidator] NaN detected pada chunk: ${chunkId}`\n    );\n  }\n\n  // INFINITY CHECK\n\n  if (vec.some(v => !Number.isFinite(v))) {\n    throw new Error(\n      `[EmbeddingValidator] Infinite value detected pada chunk: ${chunkId}`\n    );\n  }\n\n  // L2 NORM CHECK\n\n  const l2 = Math.sqrt(\n    vec.reduce((s, v) => s + v * v, 0)\n  );\n\n  if (l2 < MIN_L2_NORM) {\n    throw new Error(\n      `[EmbeddingValidator] L2 norm terlalu kecil (${l2.toFixed(6)}) pada chunk: ${chunkId}`\n    );\n  }\n\n  // VARIANCE CHECK\n\n  const mean =\n    vec.reduce((a, b) => a + b, 0) / vec.length;\n\n  const variance =\n    vec.reduce(\n      (s, v) => s + Math.pow(v - mean, 2),\n      0\n    ) / vec.length;\n\n  if (variance < MIN_VARIANCE) {\n    throw new Error(\n      `[EmbeddingValidator] Variance terlalu kecil (${variance}) pada chunk: ${chunkId}`\n    );\n  }\n\n  // FINGERPRINT PREVIEW\n  // untuk duplicate detection ringan\n\n  const fingerprint =\n    vec\n      .slice(0, 24)\n      .map(v => v.toFixed(4))\n      .join('|');\n\n  return {\n    l2,\n    variance,\n    fingerprint\n  };\n}\n\n// ════════════════════════════════════════\n// MAIN PROCESSING\n// ════════════════════════════════════════\n\nconst items = $input.all();\n\nreturn items.map((item, index) => {\n\n  const embeddingResponse = item.json;\n\n  const embedding =\n    embeddingResponse.data?.[0]?.embedding;\n\n  // ════════════════════════════════════\n  // RELATIONAL PAIRING\n  // ════════════════════════════════════\n\n  const rid =\n    embeddingResponse.relational_id ||\n    embeddingResponse.input;\n\n  const chunkData =\n    (rid && qualityMap[rid])\n      ? qualityMap[rid]\n      : (qualityGateItems[index]?.json || {});\n\n  const chunkId =\n    chunkData.relational_id ||\n    chunkData.chunk_index ||\n    index;\n\n  // ════════════════════════════════════\n  // CONTEXTUAL EMBEDDING VALIDATION\n  // ════════════════════════════════════\n\n  if (!chunkData.embedding_input) {\n    throw new Error(\n      `[EmbeddingValidator] Missing embedding_input pada chunk: ${chunkId}`\n    );\n  }\n\n  // ════════════════════════════════════\n  // VALIDATE EMBEDDING\n  // ════════════════════════════════════\n\n  const validation =\n    validateEmbedding(embedding, chunkId);\n\n  // ════════════════════════════════════\n  // OUTPUT\n  // ════════════════════════════════════\n\n  return {\n    json: {\n\n      ...chunkData,\n\n      embedding_validated: true,\n\n      embedding_vector: embedding,\n\n      embedding_str:\n        `[${embedding.join(',')}]`,\n\n      l2_norm:\n        Math.round(validation.l2 * 1_000_000) / 1_000_000,\n\n      embedding_variance:\n        validation.variance,\n\n      embedding_fingerprint:\n        validation.fingerprint,\n\n      embedding_dimension:\n        EXPECTED_DIM,\n\n      embedding_model:\n        EMBEDDING_MODEL,\n\n      embedding_pipeline_version:\n        EMBEDDING_PIPELINE_VERSION,\n\n      embedding_validated_at:\n        new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "155fc068-9d29-4ecd-9d89-979a938d4437",
+      "name": "Embedding Quality Validator",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3520,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════════════\n// ADAPTIVE TOKEN CHUNKER — V6\n// ENTERPRISE LEGAL HIERARCHY CHUNKER\n//\n// FEATURES:\n// ✅ preserve metadata\n// ✅ preserve hierarchy\n// ✅ preserve AST semantics\n// ✅ parent-child relation\n// ✅ hierarchy path\n// ✅ structural depth\n// ✅ globally unique relational_id\n// ✅ adaptive chunk splitting\n// ✅ definition-aware chunking\n// ✅ citation-ready architecture\n// ✅ graph-ready architecture\n//\n// OUTPUT:\n// optimized legal retrieval chunks\n// ════════════════════════════════════════════════════════════════\n\nconst items = $input.all();\n\n// ════════════════════════════════════════\n// CONFIG\n// ════════════════════════════════════════\n\nconst TARGET_TOKENS = 350;\nconst HARD_LIMIT = 500;\n\n// ════════════════════════════════════════\n// TOKEN ESTIMATOR\n// ════════════════════════════════════════\n\nfunction estimateTokens(text = '') {\n\n  return Math.ceil(\n    text.length / 4\n  );\n}\n\n// ════════════════════════════════════════\n// LEGAL PARAGRAPH SPLITTER\n// ════════════════════════════════════════\n\nfunction splitLegalParagraphs(text = '') {\n\n  return text\n    .split(/\\n(?=\\d+\\.\\s)|\\n(?=[a-z]\\.\\s)/g)\n    .map(s => s.trim())\n    .filter(Boolean);\n}\n\n// ════════════════════════════════════════\n// ADAPTIVE SPLITTER\n// ════════════════════════════════════════\n\nfunction adaptiveSplit(text = '') {\n\n  const paragraphs =\n    splitLegalParagraphs(text);\n\n  const chunks = [];\n\n  let current = '';\n\n  for (const para of paragraphs) {\n\n    const candidate =\n      current\n        ? current + '\\n' + para\n        : para;\n\n    if (\n      estimateTokens(candidate)\n      <= TARGET_TOKENS\n    ) {\n\n      current = candidate;\n      continue;\n    }\n\n    if (current) {\n      chunks.push(current.trim());\n    }\n\n    // oversized paragraph\n    if (\n      estimateTokens(para)\n      > HARD_LIMIT\n    ) {\n\n      const sentences =\n        para.split(/(?<=\\.)\\s+/);\n\n      let temp = '';\n\n      for (const s of sentences) {\n\n        const sentenceCandidate =\n          temp\n            ? temp + ' ' + s\n            : s;\n\n        if (\n          estimateTokens(sentenceCandidate)\n          <= TARGET_TOKENS\n        ) {\n\n          temp = sentenceCandidate;\n\n        } else {\n\n          if (temp) {\n            chunks.push(temp.trim());\n          }\n\n          temp = s;\n        }\n      }\n\n      if (temp) {\n        chunks.push(temp.trim());\n      }\n\n      current = '';\n\n      continue;\n    }\n\n    current = para;\n  }\n\n  if (current) {\n    chunks.push(current.trim());\n  }\n\n  return chunks;\n}\n\n// ════════════════════════════════════════\n// METADATA BUILDER\n// ════════════════════════════════════════\n\nfunction buildMetadata(j) {\n\n  return {\n\n    // identity\n    doc_id:\n      j.doc_id || null,\n\n    doc_type:\n      j.doc_type || null,\n\n    doc_number:\n      j.doc_number || null,\n\n    doc_year:\n      j.doc_year || null,\n\n    doc_title:\n      j.doc_title || null,\n\n    doc_category:\n      j.doc_category || null,\n\n    source_url:\n      j.source_url || null,\n\n    document_slug:\n      j.document_slug || null,\n\n    // enrichment\n    doc_keywords:\n      j.doc_keywords || [],\n\n    status_hukum:\n      j.status_hukum || null,\n\n    jenis_pajak:\n      j.jenis_pajak || null,\n\n    tanggal_penetapan:\n      j.tanggal_penetapan || null,\n\n    // hierarchy\n    bab:\n      j.bab || null,\n\n    pasal_number:\n      j.pasal_number || null,\n\n    pasal_title:\n      j.pasal_title || null,\n\n    hierarchy_level:\n      j.hierarchy_level || null,\n\n    ast_type:\n      j.ast_type || null,\n\n    semantic_label:\n      j.semantic_label || null,\n\n    definition_term:\n      j.definition_term || null,\n\n    definition_number:\n      j.definition_number || null,\n\n    ast_version:\n      j.ast_version || null\n  };\n}\n\n// ════════════════════════════════════════\n// BUILD HIERARCHY PATH\n// ════════════════════════════════════════\n\nfunction buildHierarchyPath(j) {\n\n  const path = [];\n\n  if (j.bab) {\n    path.push(j.bab);\n  }\n\n  if (j.pasal_title) {\n    path.push(j.pasal_title);\n  }\n\n  if (j.definition_number) {\n    path.push(\n      `Definisi ${j.definition_number}`\n    );\n  }\n\n  return path;\n}\n\n// ════════════════════════════════════════\n// MAIN EXECUTION\n// ════════════════════════════════════════\n\nconst output = [];\n\nlet globalChunkIndex = 1;\n\nfor (const item of items) {\n\n  const j = item.json;\n\n  const text =\n    j.raw_content || '';\n\n  if (!text) continue;\n\n  const metadata =\n    buildMetadata(j);\n\n  const hierarchyPath =\n    buildHierarchyPath(j);\n\n  const isDefinitionChunk =\n    j.ast_type === 'DEFINITION'\n    || j.hierarchy_level === 'definition_item';\n\n  // ════════════════════════════════\n  // DEFINITION CHUNKS\n  // ════════════════════════════════\n\n  if (isDefinitionChunk) {\n\n    output.push({\n      json: {\n\n        ...metadata,\n\n        hierarchy_level:\n          'definition_item',\n\n        hierarchy_path:\n          hierarchyPath,\n\n        structural_depth:\n          hierarchyPath.length,\n\n        parent_relation: {\n\n          type:\n            'pasal',\n\n          id:\n            `${j.document_slug}_pasal_${j.pasal_number}`\n        },\n\n        chunk_text:\n          text,\n\n        chunk_token_estimate:\n          estimateTokens(text),\n\n        chunk_index:\n          globalChunkIndex++,\n\n        semantic_boundary:\n          'ast_definition_boundary',\n\n        is_definition_chunk:\n          true,\n\n        relational_id:\n          j.relational_id,\n\n        chunker_version:\n          'v6'\n      }\n    });\n\n    continue;\n  }\n\n  // ════════════════════════════════\n  // SHORT PASAL\n  // ════════════════════════════════\n\n  const totalTokens =\n    estimateTokens(text);\n\n  if (\n    totalTokens <= TARGET_TOKENS\n  ) {\n\n    output.push({\n      json: {\n\n        ...metadata,\n\n        hierarchy_level:\n          'pasal_chunk',\n\n        hierarchy_path:\n          hierarchyPath,\n\n        structural_depth:\n          hierarchyPath.length,\n\n        parent_relation: {\n\n          type:\n            'document',\n\n          id:\n            j.document_slug\n        },\n\n        chunk_text:\n          text,\n\n        chunk_token_estimate:\n          totalTokens,\n\n        chunk_index:\n          globalChunkIndex++,\n\n        semantic_boundary:\n          'passthrough',\n\n        is_definition_chunk:\n          false,\n\n        relational_id:\n          `${j.relational_id}_chunk_1`,\n\n        chunker_version:\n          'v6'\n      }\n    });\n\n    continue;\n  }\n\n  // ════════════════════════════════\n  // ADAPTIVE SPLIT\n  // ════════════════════════════════\n\n  const chunks =\n    adaptiveSplit(text);\n\n  chunks.forEach((chunk, idx) => {\n\n    output.push({\n      json: {\n\n        ...metadata,\n\n        hierarchy_level:\n          'pasal_chunk',\n\n        hierarchy_path:\n          hierarchyPath,\n\n        structural_depth:\n          hierarchyPath.length,\n\n        parent_relation: {\n\n          type:\n            'pasal',\n\n          id:\n            j.relational_id\n        },\n\n        chunk_text:\n          chunk,\n\n        chunk_token_estimate:\n          estimateTokens(chunk),\n\n        chunk_index:\n          globalChunkIndex++,\n\n        semantic_boundary:\n          'adaptive_split',\n\n        is_definition_chunk:\n          false,\n\n        relational_id:\n          `${j.relational_id}_chunk_${idx + 1}`,\n\n        chunker_version:\n          'v6'\n      }\n    });\n  });\n}\n\n// ════════════════════════════════════════\n// FINAL OUTPUT\n// ════════════════════════════════════════\n\nreturn output;"
+      },
+      "id": "305236c1-4534-4fbf-af2b-33f1ce3acd54",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1744,
+        176
+      ],
+      "name": "Adaptive Token Chunker",
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════════════════════\n// LEGAL AST PARSER — V6\n// ENTERPRISE LEGAL INGESTION PARSER\n//\n// FIXES:\n// ✅ metadata propagation FIXED\n// ✅ globally unique relational_id\n// ✅ document identity support\n// ✅ OCR wrap normalization\n// ✅ definition splitting\n// ✅ heading leakage prevention\n// ✅ lightweight architecture\n// ✅ semantic hierarchy preservation\n//\n// RESULT:\n// production-grade legal AST chunks\n// ════════════════════════════════════════════════════════════════════════\n\nconst items = $input.all();\n\n// ════════════════════════════════════════\n// METADATA PICKER\n// FIX: metadata now read from item.json.metadata\n// ════════════════════════════════════════\n\nfunction pickMetadata(j) {\n\n  const meta =\n    j.metadata || {};\n\n  return {\n\n    doc_id:\n      meta.doc_id || null,\n\n    doc_type:\n      meta.doc_type || null,\n\n    doc_number:\n      meta.doc_number || null,\n\n    doc_year:\n      meta.doc_year || null,\n\n    doc_title:\n      meta.doc_title || null,\n\n    doc_category:\n      meta.doc_category || null,\n\n    source_url:\n      meta.source_url || null,\n\n    doc_keywords:\n      meta.doc_keywords || [],\n\n    status_hukum:\n      meta.status_hukum || null,\n\n    jenis_pajak:\n      meta.jenis_pajak || null,\n\n    tanggal_penetapan:\n      meta.tanggal_penetapan || null\n  };\n}\n\n// ════════════════════════════════════════\n// BUILD DOCUMENT SLUG\n// ════════════════════════════════════════\n\nfunction buildDocumentSlug(meta={}) {\n\n  const type =\n    (meta.doc_type || 'doc')\n      .toString()\n      .toLowerCase()\n      .replace(/[^\\w\\s]/g, '')\n      .replace(/\\s+/g, '_');\n\n  const number =\n    (meta.doc_number || 'unknown')\n      .toString()\n      .toLowerCase()\n      .replace(/[^\\w\\s]/g, '')\n      .replace(/\\s+/g, '_');\n\n  const year =\n    (meta.doc_year || 'unknown')\n      .toString();\n\n  return `${type}_${number}_${year}`;\n}\n\n// ════════════════════════════════════════\n// DETECT UPPERCASE HEADINGS\n// ════════════════════════════════════════\n\nfunction isUppercaseHeading(line='') {\n\n  const clean =\n    line.trim();\n\n  if (clean.length < 20) {\n    return false;\n  }\n\n  // ignore numbered definitions\n  if (/^\\d+\\./.test(clean)) {\n    return false;\n  }\n\n  const upper =\n    clean.replace(/[^A-Z]/g, '').length;\n\n  const alpha =\n    clean.replace(/[^A-Za-z]/g, '').length;\n\n  if (!alpha) return false;\n\n  return (upper / alpha) > 0.9;\n}\n\n// ════════════════════════════════════════\n// NORMALIZE OCR WRAPS\n// ════════════════════════════════════════\n\nfunction normalizeLegalText(text='') {\n\n  return text\n\n    // normalize line endings\n    .replace(/\\r/g, '\\n')\n\n    // merge broken OCR words\n    .replace(/([a-zA-Z])-\\n([a-zA-Z])/g, '$1$2')\n\n    // merge wrapped sentences\n    .replace(/([a-zA-Z0-9,])\\n([a-zA-Z])/g, '$1 $2')\n\n    // preserve numbered list\n    .replace(/(\\.)\\s+(\\d+\\.)/g, '$1\\n$2')\n\n    // preserve huruf list\n    .replace(/([;:])\\s+([a-z]\\.)/g, '$1\\n$2')\n\n    // normalize spaces\n    .replace(/[ \\t]+/g, ' ')\n\n    // normalize empty lines\n    .replace(/\\n{3,}/g, '\\n\\n')\n\n    // trim lines\n    .replace(/[ \\t]+$/gm, '')\n\n    .trim();\n}\n\n// ════════════════════════════════════════\n// SPLIT DEFINITIONS\n// ════════════════════════════════════════\n\nfunction splitDefinitions(content='') {\n\n  const lines =\n    content.split('\\n');\n\n  const defs = [];\n\n  let current = null;\n\n  for (const raw of lines) {\n\n    const line =\n      raw.trim();\n\n    if (!line) continue;\n\n    const match =\n      line.match(/^(\\d+)\\.\\s+(.+)/);\n\n    // new definition item\n    if (match) {\n\n      if (current) {\n        defs.push(current);\n      }\n\n      current = {\n\n        number:\n          match[1],\n\n        text:\n          match[2]\n      };\n\n      continue;\n    }\n\n    // continuation line\n    if (current) {\n\n      current.text +=\n        ' ' + line;\n    }\n  }\n\n  if (current) {\n    defs.push(current);\n  }\n\n  return defs;\n}\n\n// ════════════════════════════════════════\n// EXTRACT LEGAL HIERARCHY\n// ════════════════════════════════════════\n\nfunction extractHierarchy(text='') {\n\n  const lines =\n    text.split('\\n');\n\n  let currentBAB = null;\n\n  let currentPasal = null;\n\n  const ast = [];\n\n  for (const rawLine of lines) {\n\n    const line =\n      rawLine.trim();\n\n    if (!line) continue;\n\n    // ════════════════════════════════\n    // BAB\n    // ════════════════════════════════\n\n    const babMatch =\n      line.match(/^BAB\\s+([IVXLCDM]+)/i);\n\n    if (babMatch) {\n\n      currentBAB = line;\n\n      continue;\n    }\n\n    // ════════════════════════════════\n    // PASAL\n    // ════════════════════════════════\n\n    const pasalMatch =\n      line.match(/^Pasal\\s+(\\d+[A-Z]?)/i);\n\n    if (pasalMatch) {\n\n      currentPasal = {\n\n        bab:\n          currentBAB,\n\n        pasal:\n          pasalMatch[1],\n\n        title:\n          line,\n\n        content: []\n      };\n\n      ast.push(currentPasal);\n\n      continue;\n    }\n\n    // ════════════════════════════════\n    // PREVENT HEADING LEAKAGE\n    // ════════════════════════════════\n\n    if (\n      isUppercaseHeading(line)\n    ) {\n      continue;\n    }\n\n    // ════════════════════════════════\n    // APPEND CONTENT\n    // ════════════════════════════════\n\n    if (currentPasal) {\n\n      currentPasal.content.push(line);\n    }\n  }\n\n  return ast;\n}\n\n// ════════════════════════════════════════\n// MAIN EXECUTION\n// ════════════════════════════════════════\n\nconst output = [];\n\nfor (const item of items) {\n\n  const text =\n    item.json.cleaned_text || '';\n\n  if (!text) continue;\n\n  // ════════════════════════════════\n  // METADATA\n  // ════════════════════════════════\n\n  const metadata =\n    pickMetadata(item.json);\n\n  // ════════════════════════════════\n  // DOCUMENT SLUG\n  // ════════════════════════════════\n\n  const documentSlug =\n    buildDocumentSlug(metadata);\n\n  // ════════════════════════════════\n  // EXTRACT AST\n  // ════════════════════════════════\n\n  const ast =\n    extractHierarchy(text);\n\n  for (const node of ast) {\n\n    const rawContent =\n      normalizeLegalText(\n        node.content.join('\\n')\n      );\n\n    // skip empty\n    if (!rawContent) {\n      continue;\n    }\n\n    // ════════════════════════════════\n    // DETECT DEFINITION PASAL\n    // ════════════════════════════════\n\n    const isDefinitionPasal =\n      /yang dimaksud dengan/i.test(rawContent);\n\n    // ════════════════════════════════\n    // DEFINITION CHUNKS\n    // ════════════════════════════════\n\n    if (isDefinitionPasal) {\n\n      const definitions =\n        splitDefinitions(rawContent);\n\n      definitions.forEach((def, idx) => {\n\n        const definitionTerm =\n          (\n            def.text.split(' adalah ')[0] || ''\n          )\n          .replace(/\\s+/g, ' ')\n          .trim();\n\n        output.push({\n          json: {\n\n            // metadata\n            ...metadata,\n\n            document_slug:\n              documentSlug,\n\n            // hierarchy\n            bab:\n              node.bab,\n\n            pasal_number:\n              node.pasal,\n\n            pasal_title:\n              node.title,\n\n            hierarchy_level:\n              'definition_item',\n\n            ast_type:\n              'DEFINITION',\n\n            semantic_label:\n              'definition',\n\n            // definition metadata\n            definition_number:\n              def.number,\n\n            definition_term:\n              definitionTerm,\n\n            // content\n            raw_content:\n              def.text,\n\n            // indexing\n            chunk_index:\n              idx + 1,\n\n            relational_id:\n              `${documentSlug}_pasal_${node.pasal}_def_${def.number}`,\n\n            ast_version:\n              'v6'\n          }\n        });\n      });\n\n      continue;\n    }\n\n    // ════════════════════════════════\n    // NORMAL PASAL\n    // ════════════════════════════════\n\n    output.push({\n      json: {\n\n        // metadata\n        ...metadata,\n\n        document_slug:\n          documentSlug,\n\n        // hierarchy\n        bab:\n          node.bab,\n\n        pasal_number:\n          node.pasal,\n\n        pasal_title:\n          node.title,\n\n        hierarchy_level:\n          'pasal',\n\n        ast_type:\n          'PASAL',\n\n        semantic_label:\n          'pasal',\n\n        // content\n        raw_content:\n          rawContent,\n\n        // indexing\n        chunk_index:\n          1,\n\n        relational_id:\n          `${documentSlug}_pasal_${node.pasal}`,\n\n        ast_version:\n          'v6'\n      }\n    });\n  }\n}\n\n// ════════════════════════════════════════\n// FINAL OUTPUT\n// ════════════════════════════════════════\n\nreturn output;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1504,
+        176
+      ],
+      "id": "f8041ad5-f1ca-4eb6-827f-3a4501a607f6",
+      "name": "Legal Ast Parser"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ════════════════════════════════════════════════════════════════════════\n// REGEX CLEANUP — V5\n// AUTO TEXT FIELD DETECTOR\n//\n// FIXES:\n// ✅ automatic text field detection\n// ✅ OCR footer cleanup\n// ✅ fail-safe ingestion\n// ✅ schema-agnostic support\n// ════════════════════════════════════════════════════════════════════════\n\nconst items = $input.all();\n\n// ════════════════════════════════════════\n// FIND TEXT FIELD AUTOMATICALLY\n// ════════════════════════════════════════\n\nfunction detectTextField(json) {\n\n  // PRIORITY FIELDS\n\n  const priorityFields = [\n\n    'cleaned_text',\n\n    'cleanedMarkdown',\n\n    'full_text',\n\n    'raw_content',\n\n    'text',\n\n    'raw_text',\n\n    'markdown',\n\n    'content',\n\n    'result',\n\n    'body'\n  ];\n\n  // CHECK PRIORITY FIRST\n\n  for (const field of priorityFields) {\n\n    const value = json[field];\n\n    if (\n      typeof value === 'string' &&\n      value.trim().length > 50\n    ) {\n      return value;\n    }\n  }\n\n  // FALLBACK:\n  // SEARCH ANY STRING FIELD\n\n  for (const [key, value] of Object.entries(json)) {\n\n    if (\n      typeof value === 'string' &&\n      value.trim().length > 50\n    ) {\n\n      return value;\n    }\n  }\n\n  return '';\n}\n\n// ════════════════════════════════════════\n// OCR CLEANER\n// ════════════════════════════════════════\n\nfunction cleanupOCR(text = '') {\n\n  return text\n\n    .replace(/\\r/g, '\\n')\n\n    // remove page footer\n    .replace(/^\\s*-\\s*\\d+\\s*-\\s*$/gm, '')\n\n    // remove standalone numbers\n    .replace(/^\\s*\\d+\\s*$/gm, '')\n\n    // remove OCR artifacts\n    .replace(\n      /^\\s*(RUANG LINGKUP|LAMPIRAN|PENJELASAN)\\s*$/gmi,\n      ''\n    )\n\n    // remove separator lines\n    .replace(/^\\s*[-—]{2,}\\s*$/gm, '')\n\n    // fix OCR broken wrap\n    .replace(/([A-Za-z])-\\n([A-Za-z])/g, '$1-$2')\n\n    // normalize spaces\n    .replace(/[ \\t]+/g, ' ')\n\n    // normalize empty lines\n    .replace(/\\n{3,}/g, '\\n\\n')\n\n    // remove trailing spaces\n    .replace(/[ \\t]+$/gm, '')\n\n    .trim();\n}\n\n// ════════════════════════════════════════\n// MAIN\n// ════════════════════════════════════════\n\nreturn items.map((item, index) => {\n\n  const rawText =\n    detectTextField(item.json);\n\n  // FAIL SAFE:\n  // don't crash ingestion pipeline\n\n  if (!rawText) {\n\n    return {\n      json: {\n\n        ...item.json,\n\n        cleaned_text: '',\n\n        cleanup_error:\n          'No text field detected',\n\n        cleanup_version:\n          'regex_cleanup_v5'\n      }\n    };\n  }\n\n  const cleaned =\n    cleanupOCR(rawText);\n\n  return {\n    json: {\n\n      ...item.json,\n\n      cleaned_text:\n        cleaned,\n\n      cleanup_stats: {\n\n        original_length:\n          rawText.length,\n\n        cleaned_length:\n          cleaned.length\n      },\n\n      cleanup_version:\n        'regex_cleanup_v5',\n\n      cleaned_at:\n        new Date().toISOString()\n    }\n  };\n});"
+      },
+      "id": "e0723438-d9cf-45f8-8a9a-de4408035fdc",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1264,
+        176
+      ],
+      "name": "Regex Cleanup"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "LLM Clean Batch": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Handle LLM Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embedding": {
+      "main": [
+        [
+          {
+            "node": "Embedding Quality Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reconstruction Test": {
+      "main": [
+        [
+          {
+            "node": "Evaluate Reconstruction",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Evaluate Reconstruction": {
+      "main": [
+        [
+          {
+            "node": "FINGERPRINT HASH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle LLM Error": {
+      "main": [
+        [
+          {
+            "node": "Log LLM Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ParseJDIHURL": {
+      "main": [
+        [
+          {
+            "node": "Early Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ParseJDIHResponse": {
+      "main": [
+        [
+          {
+            "node": "If2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MergeBestSource": {
+      "main": [
+        [
+          {
+            "node": "MetadataHub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetAPIDataJDIH": {
+      "main": [
+        [
+          {
+            "node": "RulesFilterType",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RulesFilterType",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "ParseJDIHURL",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ParseRiwayatDoc": {
+      "main": [
+        [
+          {
+            "node": "Regex Cleanup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetPDF": {
+      "main": [
+        [
+          {
+            "node": "ExtractPDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractPDF": {
+      "main": [
+        [
+          {
+            "node": "ParseJDIHResponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If2": {
+      "main": [
+        [
+          {
+            "node": "MergeBestSource",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "UpdateStatusGS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GetHTML": {
+      "main": [
+        [
+          {
+            "node": "ExtractHTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RulesFilterType": {
+      "main": [
+        [
+          {
+            "node": "GetHTML",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "GetPDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "ExtractHTML": {
+      "main": [
+        [
+          {
+            "node": "ParseJDIHResponse",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Early Check": {
+      "main": [
+        [
+          {
+            "node": "Early Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Early Gate": {
+      "main": [
+        [
+          {
+            "node": "Set Ingestion In Progress",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Metadata Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Ingestion In Progress": {
+      "main": [
+        [
+          {
+            "node": "GetAPIDataJDIH",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert + Audit Log": {
+      "main": [
+        [
+          {
+            "node": "Finalizer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Metadata Fields": {
+      "main": [
+        [
+          {
+            "node": "Early Update Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MetadataHub": {
+      "main": [
+        [
+          {
+            "node": "ParseRiwayatDoc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Metadata Enricher": {
+      "main": [
+        [
+          {
+            "node": "Semantic Analyzer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Semantic Analyzer": {
+      "main": [
+        [
+          {
+            "node": "Embeding Builder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Domain Scoring Engine": {
+      "main": [
+        [
+          {
+            "node": "Quality Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quality check?": {
+      "main": [
+        [
+          {
+            "node": "Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Invalid Chunk Logger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Invalid Chunk Logger": {
+      "main": [
+        [
+          {
+            "node": "Log Failed Quality",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Quality Gate": {
+      "main": [
+        [
+          {
+            "node": "Quality check?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeding Builder": {
+      "main": [
+        [
+          {
+            "node": "Domain Scoring Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FINGERPRINT HASH": {
+      "main": [
+        [
+          {
+            "node": "Upsert + Audit Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embedding Quality Validator": {
+      "main": [
+        [
+          {
+            "node": "Reconstruction Test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Adaptive Token Chunker": {
+      "main": [
+        [
+          {
+            "node": "Metadata Enricher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Legal Ast Parser": {
+      "main": [
+        [
+          {
+            "node": "Adaptive Token Chunker",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Regex Cleanup": {
+      "main": [
+        [
+          {
+            "node": "Legal Ast Parser",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "abd38737-8a19-4628-bd10-8ca609b2c38f",
+  "meta": {
+    "instanceId": "0bc038e49b07af2e3e858246c7c482b54ba66879f695b1ba1f1900faa8f7d141"
+  },
+  "id": "UbutPb0vtGTRSzJQ",
+  "tags": []
+}

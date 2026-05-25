@@ -1,0 +1,681 @@
+{
+  "name": "Query Pipeline V6 (Anti-Hallucination + Query Intelligence)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "query-pajak",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "d5765abb-739a-440c-9737-7e048edc1baa",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -2416,
+        240
+      ],
+      "name": "Webhook",
+      "webhookId": "84cd7386-5b6e-49f5-b840-b776c9849c43"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "input",
+              "value": "={{ $json.all_queries }}"
+            },
+            {
+              "name": "model",
+              "value": "={{ $env.OPENROUTER_EMBEDDING_MODEL }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "d497ea2a-614b-4c4a-8555-bb03a33dfa2e",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1248,
+        224
+      ],
+      "name": "Embed User Query"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SET LOCAL hnsw.ef_search = 100;\n \nSELECT\n  id,\n  doc_type,\n  doc_number,\n  doc_year,\n  pasal_number,\n  chunk_text,\n  source_url,\n  doc_title,\n  status_hukum,\n  jenis_pajak,\n  chunk_index,\n  total_chunks,\n  1 - (embedding <=> $1::vector) AS similarity\nFROM tax_documents\nWHERE\n  status_hukum = 'BERLAKU'\n  AND (1 - (embedding <=> $1::vector)) >= 0.30        -- [A] absolute threshold\n  AND ($2::text IS NULL OR jenis_pajak = $2)\n  AND ($3::text IS NULL OR doc_type    = $3)\nORDER BY\n  embedding <=> $1::vector ASC,                        -- nearest first\n  doc_year DESC                                         -- tiebreaker: peraturan terbaru\nLIMIT 25;",
+        "options": {
+          "queryReplacement": "$1 = embedding vector, $2 = jenis_pajak, $3 = doc_type"
+        }
+      },
+      "id": "b6284061-a3c8-4c26-8ef3-2eec81906ff5",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -832,
+        224
+      ],
+      "name": "Postgres Vector Search",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "P3my7gcL6yREmLDp",
+          "name": "Postgres account TaxRag"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/rerank",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: \"cohere/rerank-v3.5\",\n  query: $('Webhook').first().json.body.query,\n  documents: $input.all().map(item => item.json.chunk_text),\n  top_n: 6,\n  return_documents: false\n} }}",
+        "options": {}
+      },
+      "id": "5df63605-5e59-4d41-9f9c-5d499d232876",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -624,
+        224
+      ],
+      "name": "OpenRouter Rerank"
+    },
+    {
+      "parameters": {
+        "jsCode": "const rerankResults = $input.first().json.results;\nconst originalChunks = $('Postgres Vector Search').all();\n\n// Map hasil rerank ke chunk original\nlet rerankedChunks = rerankResults.map(result => {\n  const original = originalChunks[result.index].json;\n  return {\n    json: {\n      ...original,\n      rerank_score: result.relevance_score\n    }\n  };\n});\n\n// Urutkan: skor rerank DESC, lalu doc_year DESC sebagai tiebreaker\nrerankedChunks.sort((a, b) => {\n  const scoreDiff = b.json.rerank_score - a.json.rerank_score;\n  if (Math.abs(scoreDiff) > 0.01) return scoreDiff;\n  return parseInt(b.json.doc_year || 0) - parseInt(a.json.doc_year || 0);\n});\n\n// Deteksi konflik: pasal_number sama tapi doc_year berbeda\nconst pasalMap = {};\nconst conflicts = [];\nfor (const chunk of rerankedChunks) {\n  const key = `${chunk.json.doc_type}-${chunk.json.pasal_number}`;\n  if (pasalMap[key] && pasalMap[key] !== chunk.json.doc_year) {\n    conflicts.push({\n      pasal: chunk.json.pasal_number,\n      doc_type: chunk.json.doc_type,\n      years: [pasalMap[key], chunk.json.doc_year]\n    });\n  } else {\n    pasalMap[key] = chunk.json.doc_year;\n  }\n}\n\n// Tandai setiap chunk dengan flag konflik\nrerankedChunks = rerankedChunks.map(chunk => ({\n  json: {\n    ...chunk.json,\n    has_conflict: conflicts.some(c => c.pasal === chunk.json.pasal_number && c.doc_type === chunk.json.doc_type),\n    conflicts: conflicts\n  }\n}));\n\n// Ambil top 5 setelah sorting\nreturn rerankedChunks.slice(0, 5);\n"
+      },
+      "id": "9690f025-22b2-47a2-a769-d069b008f103",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -416,
+        224
+      ],
+      "name": "Parse Rerank Results"
+    },
+    {
+      "parameters": {
+        "jsCode": "const chunks = $input.all();\nconst originalQuery = $('Webhook').first().json.body.query;\nconst autoDetected = $('Parse Query Intelligence').first().json.auto_detected;\n\nif (chunks.length === 0 || !chunks[0].json.chunk_text) {\n  return [{ json: {\n    context: \"TIDAK ADA DOKUMEN YANG DITEMUKAN.\",\n    query: originalQuery,\n    sources: [],\n    max_rerank_score: 0,\n    confidence: 'NONE',\n    auto_detected: autoDetected\n  }}];\n}\n\nconst maxScore = chunks[0].json.rerank_score || 0;\nconst conflicts = chunks[0].json.conflicts || [];\n\n// Hierarki kekuatan hukum untuk ditampilkan ke LLM\nconst hierarki = { 'UU': 1, 'PP': 2, 'PMK': 3, 'PER': 4, 'KMK': 5, 'SE': 6 };\n\n// Sort sumber by hierarki sebelum format context\nconst sortedChunks = [...chunks].sort((a, b) => {\n  const ha = hierarki[a.json.doc_type] || 99;\n  const hb = hierarki[b.json.doc_type] || 99;\n  return ha - hb;\n});\n\nconst contextParts = sortedChunks.map((item, i) => {\n  const d = item.json;\n  const hierLabel = hierarki[d.doc_type] ? `[Hierarki ${hierarki[d.doc_type]}]` : '';\n  const conflictWarning = d.has_conflict ? `⚠️ PERHATIAN: Ada versi lain dari peraturan ini dengan tahun berbeda.` : '';\n  return [\n    `--- Sumber ${i+1}: ${d.doc_type} No. ${d.doc_number} Tahun ${d.doc_year} ${hierLabel} ---`,\n    `Judul: ${d.doc_title || '-'}`,\n    `Pasal: ${d.pasal_number || 'Ketentuan Umum'}`,\n    conflictWarning,\n    d.chunk_text\n  ].filter(Boolean).join('\\n');\n});\n\nconst contextText = contextParts.join('\\n\\n');\n\n// Conflict summary untuk LLM\nconst conflictSummary = conflicts.length > 0\n  ? `\\n\\n⚠️ PERINGATAN KONFLIK: Ditemukan ${conflicts.length} kemungkinan konflik antar peraturan. Gunakan peraturan dengan tahun terbaru dan hierarki tertinggi (UU > PP > PMK > PER > KMK > SE).`\n  : '';\n\n// Confidence level\nlet confidence = 'LOW';\nif (maxScore >= 0.7) confidence = 'HIGH';\nelse if (maxScore >= 0.5) confidence = 'MEDIUM';\n\nreturn [{\n  json: {\n    query: originalQuery,\n    context: contextText + conflictSummary,\n    max_rerank_score: maxScore,\n    confidence: confidence,\n    conflicts: conflicts,\n    auto_detected: autoDetected,\n    sources: sortedChunks.map(c => ({\n      doc_title: c.json.doc_title,\n      doc_type: c.json.doc_type,\n      doc_number: c.json.doc_number,\n      doc_year: c.json.doc_year,\n      pasal_number: c.json.pasal_number,\n      source_url: c.json.source_url,\n      similarity_score: c.json.similarity,\n      rerank_score: c.json.rerank_score,\n      hierarki: hierarki[c.json.doc_type] || 99\n    }))\n  }\n}];\n"
+      },
+      "id": "5c2e0285-8116-43fb-a04f-f0999269d384",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -208,
+        224
+      ],
+      "name": "Format Context for LLM"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.max_rerank_score }}",
+              "operation": "largerEqual",
+              "value2": 0.5
+            }
+          ]
+        }
+      },
+      "id": "c5f1db25-eab4-4984-92e5-bba4694a05f2",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        0,
+        224
+      ],
+      "name": "Cek Relevance Score"
+    },
+    {
+      "parameters": {
+        "jsCode": "const autoDetected = $json.auto_detected || {};\nconst score = ($json.max_rerank_score * 100).toFixed(1);\n\nreturn [{\n  json: {\n    answer: `Maaf, pertanyaan Anda tidak dapat dijawab dengan tingkat kepercayaan yang cukup dari database peraturan yang ada (skor relevansi: ${score}%, minimum: 50%).\\n\\nKemungkinan penyebab:\\n- Peraturan terkait belum diinput ke dalam database\\n- Pertanyaan menggunakan terminologi yang berbeda dari redaksi peraturan\\n- Topik tidak tercakup dalam peraturan perpajakan yang tersedia\\n\\nSaran:\\n- Coba reformulasikan pertanyaan dengan terminologi hukum pajak formal\\n- Konsultasikan langsung dengan Kantor Pelayanan Pajak (KPP) setempat\\n- Hubungi DJP di kring pajak 1500200`,\n    query: $json.query,\n    sources: [],\n    confidence: 'NONE',\n    rerank_score: $json.max_rerank_score,\n    auto_detected: autoDetected\n  }\n}];\n"
+      },
+      "id": "98b77118-8cb9-4db8-a4c0-abe62ddad12d",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        320
+      ],
+      "name": "Format Bypass Output (False)"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  status: \"rejected\",\n  answer: $json.answer,\n  query: $json.query,\n  sources: $json.sources,\n  confidence: $json.confidence,\n  rerank_score: $json.rerank_score,\n  auto_detected: $json.auto_detected\n} }}",
+        "options": {}
+      },
+      "id": "6c418a62-0fd5-4472-8215-cfe16a3d4330",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        528,
+        320
+      ],
+      "name": "Respond to Webhook (Ditolak)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENROUTER_INGESTION_MODEL,\n  temperature: 0.0,\n  max_tokens: 2048,\n  messages: [\n    {\n      role: 'system',\n      content: \"Kamu adalah asisten hukum pajak Indonesia yang sangat presisi. Tugasmu HANYA menjawab berdasarkan dokumen peraturan yang diberikan.\\n\\nATURAN MUTLAK — WAJIB DIIKUTI:\\n1. HANYA gunakan informasi yang ADA di konteks. DILARANG KERAS menggunakan pengetahuan internal LLM tentang pajak.\\n2. Jika informasi tidak tersedia di konteks, jawab TEPAT: 'Informasi ini tidak tersedia dalam basis data peraturan yang ada. Silakan konsultasikan dengan konsultan pajak atau DJP.'\\n3. SETIAP klaim hukum WAJIB disertai referensi spesifik: nama peraturan, nomor, tahun, dan nomor pasal/ayat.\\n4. Jika ada konflik antar sumber, WAJIB:\\n   a. Sebutkan adanya konflik secara eksplisit\\n   b. Gunakan peraturan hierarki tertinggi (UU > PP > PMK > PER > KMK > SE)\\n   c. Untuk hierarki sama, gunakan tahun terbaru\\n5. DILARANG menyimpulkan, menginterpretasi, atau mengekstrapolasi aturan yang tidak eksplisit tertulis\\n6. DILARANG menggunakan frasa ambigu seperti 'umumnya', 'biasanya', 'seharusnya'\\n7. Gunakan Bahasa Indonesia formal dan jelas\\n8. Akhiri SELALU dengan: '⚠️ Jawaban ini hanya berdasarkan dokumen dalam database. Untuk keputusan bisnis, konsultasikan dengan konsultan pajak berlisensi atau Kantor Pelayanan Pajak setempat.'\"\n    },\n    {\n      role: 'user',\n      content: `Pertanyaan: ${$json.query}\\n\\nTingkat Kepercayaan Sumber: ${$json.confidence}\\n\\nKonteks Peraturan Perpajakan (diurutkan dari hierarki tertinggi):\\n${$json.context}\\n\\nBerikan jawaban komprehensif berdasarkan HANYA peraturan di atas.`\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "69a3c584-ecf6-47df-974e-b1d26b6f8044",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        0,
+        0
+      ],
+      "name": "LLM Synthesis (True)"
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{\n  json: {\n    answer: $json.choices[0].message.content,\n    sources: $('Format Context for LLM').first().json.sources,\n    query: $('Format Context for LLM').first().json.query,\n    confidence: $('Format Context for LLM').first().json.confidence,\n    rerank_score: $('Format Context for LLM').first().json.max_rerank_score,\n    auto_detected: $('Format Context for LLM').first().json.auto_detected,\n    conflicts: $('Format Context for LLM').first().json.conflicts\n  }\n}];\n"
+      },
+      "id": "13d136d0-8b63-4f2f-8133-62d3decafb1c",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        320,
+        0
+      ],
+      "name": "Format Final Output"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  status: \"success\",\n  answer: $json.answer,\n  sources: $json.sources,\n  query: $json.query,\n  confidence: $json.confidence,\n  rerank_score: $json.rerank_score,\n  auto_detected: $json.auto_detected,\n  conflicts: $json.conflicts\n} }}",
+        "options": {}
+      },
+      "id": "88a9f192-bed7-49c3-97b0-8ca1a2878d0e",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        528,
+        0
+      ],
+      "name": "Respond to Webhook (Sukses)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  model: $env.OPENROUTER_INGESTION_MODEL,\n  temperature: 0.0,\n  max_tokens: 300,\n  messages: [\n    {\n      role: 'system',\n      content: \"Kamu adalah analis query hukum pajak Indonesia. Tugasmu menganalisis pertanyaan user dan mengembalikan JSON murni tanpa preamble, tanpa backtick, tanpa teks apapun di luar JSON.\\n\\nStruktur output WAJIB:\\n{\\n  \\\"jenis_pajak\\\": \\\"PPh|PPN|PPnBM|PBB|Bea_Cukai|KUP|Umum|null\\\",\\n  \\\"doc_type\\\": \\\"UU|PP|PMK|PER|KMK|SE|null\\\",\\n  \\\"expanded_queries\\\": [\\\"reformulasi teknis 1\\\", \\\"reformulasi teknis 2\\\", \\\"reformulasi teknis 3\\\"]\\n}\\n\\nPanduan jenis_pajak:\\n- PPh: pajak penghasilan, PPh 21, PPh 22, PPh 23, PPh 25, PPh 26, PPh badan, dividen, bunga, royalti\\n- PPN: pajak pertambahan nilai, faktur pajak, PKP, BKP, JKP\\n- KUP: ketentuan umum, sanksi, denda, STP, SKP, keberatan, banding, NPWP, SPT\\n- Umum: jika tidak bisa dipastikan\\n- null: jika user secara eksplisit kirim filter sendiri\\n\\nPanduan expanded_queries:\\n- Terjemahkan bahasa sehari-hari ke terminologi hukum pajak formal\\n- Contoh: 'denda telat lapor' → 'sanksi administrasi keterlambatan penyampaian Surat Pemberitahuan', 'sanksi pasal 7 KUP', 'denda SPT tahunan tidak tepat waktu'\\n- Selalu buat 3 reformulasi yang berbeda sudut pandang terminologinya\"\n    },\n    {\n      role: 'user',\n      content: `Analisis pertanyaan ini: \"${$json.body.query}\"\\n\\nFilter eksplisit dari user (jika ada, set field terkait = null agar tidak di-override):\\n- jenis_pajak: ${$json.body.jenis_pajak || 'tidak ada'}\\n- doc_type: ${$json.body.doc_type || 'tidak ada'}`\n    }\n  ]\n} }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "868a51e5-16f6-418f-aab5-c2770df0c210",
+      "name": "Query Intelligence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -1664,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const llmResponse = $input.first().json;\nconst originalQuery = $('Webhook').first().json.body.query;\nconst userJenisPajak = $('Webhook').first().json.body.jenis_pajak || null;\nconst userDocType = $('Webhook').first().json.body.doc_type || null;\n\nlet parsed = {};\ntry {\n  const raw = llmResponse.choices[0].message.content;\n  const clean = raw.replace(/```json|```/g, '').trim();\n  parsed = JSON.parse(clean);\n} catch(e) {\n  // Fallback jika LLM gagal parse\n  parsed = { jenis_pajak: null, doc_type: null, expanded_queries: [originalQuery] };\n}\n\n// User filter selalu menang atas auto-detect\nconst finalJenisPajak = userJenisPajak || parsed.jenis_pajak || null;\nconst finalDocType    = userDocType    || parsed.doc_type    || null;\n\n// Gabungkan query original + expanded untuk multi-embedding\nconst allQueries = [originalQuery, ...(parsed.expanded_queries || [])].slice(0, 4);\n\nreturn [{\n  json: {\n    original_query: originalQuery,\n    all_queries: allQueries,\n    jenis_pajak: finalJenisPajak,\n    doc_type: finalDocType,\n    auto_detected: {\n      jenis_pajak: parsed.jenis_pajak,\n      doc_type: parsed.doc_type,\n      expanded_queries: parsed.expanded_queries\n    }\n  }\n}];\n"
+      },
+      "id": "f52ab5fb-b885-4d8e-8c46-78bcecf25db3",
+      "name": "Parse Query Intelligence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1456,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rata-rata semua embedding vectors dari multi-query\n// Ini membuat satu vektor \"centroid\" yang representatif\nconst embeddingData = $input.first().json.data;\n\nif (!embeddingData || embeddingData.length === 0) {\n  throw new Error('[Merge Multi Embeddings] Tidak ada embedding yang dihasilkan.');\n}\n\nconst dims = embeddingData[0].embedding.length;\nconst count = embeddingData.length;\n\n// Hitung rata-rata per dimensi\nconst avgEmbedding = new Array(dims).fill(0);\nfor (const item of embeddingData) {\n  for (let d = 0; d < dims; d++) {\n    avgEmbedding[d] += item.embedding[d] / count;\n  }\n}\n\n// Normalisasi L2 agar tetap unit vector (penting untuk cosine similarity)\nconst magnitude = Math.sqrt(avgEmbedding.reduce((sum, v) => sum + v * v, 0));\nconst normalizedEmbedding = magnitude > 0\n  ? avgEmbedding.map(v => v / magnitude)\n  : avgEmbedding;\n\nreturn [{\n  json: {\n    embedding: normalizedEmbedding,\n    query_count: count,\n    dims: dims\n  }\n}];\n"
+      },
+      "id": "74cdcf9a-3310-4deb-a6cc-6e6a2352eac8",
+      "name": "Merge Multi Embeddings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1040,
+        224
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "77d2d419-68cd-4916-9548-b7613c77efeb",
+              "leftValue": "={{ ($node[\"Postgres Vector Search\"].items().length).toNumber() }}",
+              "rightValue": "={{ 0 }}",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {
+          "ignoreCase": false
+        }
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -720,
+        576
+      ],
+      "id": "82ec5fbf-3ae1-44ba-b42c-41338a9926ee",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "const autoDetected = $json.auto_detected || {};\nconst score = ($json.max_rerank_score * 100).toFixed(1);\n\nreturn [{\n  json: {\n    answer: `Maaf, pertanyaan Anda tidak dapat dijawab dengan tingkat kepercayaan yang cukup dari database peraturan yang ada Kemungkinan penyebab:\\n- Peraturan terkait belum diinput ke dalam database\\n- Pertanyaan menggunakan terminologi yang berbeda dari redaksi peraturan\\n- Topik tidak tercakup dalam peraturan perpajakan yang tersedia\\n\\nSaran:\\n- Coba reformulasikan pertanyaan dengan terminologi hukum pajak formal\\n- Konsultasikan langsung dengan Kantor Pelayanan Pajak (KPP) setempat\\n- Hubungi DJP di kring pajak 1500200`,\n    query: $json.query,\n    sources: [],\n    confidence: 'NONE',\n    rerank_score: $json.max_rerank_score,\n    auto_detected: autoDetected,\n    status_reason: 'rejected'        // ← tambahkan ini\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -304,
+        576
+      ],
+      "id": "0f484c51-4c24-4ef6-8fd2-04e9f819f230",
+      "name": "Format No Data Output"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\n  status: $json.status_reason,\n  answer: $json.answer,\n  query: $json.query,\n  sources: $json.sources,\n  confidence: $json.confidence,\n  rerank_score: $json.rerank_score,\n  auto_detected: $json.auto_detected\n} }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        16,
+        704
+      ],
+      "id": "ef957e45-79de-4f22-a8df-4bbe628819d1",
+      "name": "Respond to Webhook (Not Found)"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8a104f62-3119-4633-ab79-5c2294d76fb1",
+              "leftValue": "={{ $json.candidates[0].content.parts[0].text.trim().toUpperCase() }}",
+              "rightValue": "YES",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -1952,
+        240
+      ],
+      "id": "68bd10ec-26fa-4422-965c-239a06663037",
+      "name": "If1"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Node: \"Format Off-Topic Output\"\n// Mengambil data dari node Webhook dan node Filter\n\nconst originalQuery = $('Webhook').item.json.body.query || '';\n// Sesuaikan nama node 'Query Intelligence1' atau nama node HTTP Request Anda\nconst filterOutput = $('Pre-FilterAI: Cek Relevansi Query').item.json; \n\n// Logika penentuan reason (bisa ditambah sesuai kebutuhan)\nlet reason = 'no_tax_keyword_found';\nif (originalQuery.length < 5) {\n  reason = 'query_too_short';\n}\n\nconst reasonMessages = {\n  'query_too_short': 'Pertanyaan terlalu singkat untuk diproses.',\n  'no_tax_keyword_found': 'Pertanyaan tidak mengandung konteks perpajakan.'\n};\n\nreturn {\n  answer: `Maaf, sistem ini hanya dapat menjawab pertanyaan seputar peraturan perpajakan Indonesia.\\n\\nPertanyaan Anda: \"${originalQuery}\"\\n${reasonMessages[reason]}\\n\\nContoh pertanyaan yang dapat dijawab:\\n- \"Berapa tarif PPh badan untuk UMKM?\"\\n- \"Apa sanksi telat lapor SPT tahunan?\"\\n- \"Bagaimana cara menghitung PPh 21 karyawan?\"\\n- \"Apa saja objek PPN yang dikecualikan?\"`,\n  query: originalQuery,\n  sources: [],\n  confidence: 'NONE',\n  rerank_score: 0,\n  auto_detected: {},\n  status_reason: 'off_topic'\n};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1904,
+        720
+      ],
+      "id": "e268a8d9-7ff1-4894-afef-bd557009ff17",
+      "name": "Format Off-Topic Output"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.OPENROUTER_API_KEY}}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ \n{\n  \"model\": $env.OPENROUTER_INGESTION_MODEL,\n  \"temperature\": 0,\n  \"max_tokens\": 2,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"Anda adalah Gatekeeper Aisuka.com. Tugas Anda memfilter relevansi pertanyaan terhadap topik Pajak, Akuntansi, dan Hukum Indonesia. Jawab HANYA dengan satu kata: 'YES' atau 'NO'.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Pertanyaan Pengguna: \" + $json.body.query + \"\\n\\nRelevan?\"\n    }\n  ]\n}\n}}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "json"
+            }
+          }
+        }
+      },
+      "id": "90dfd381-2c29-46bf-8056-52385730739f",
+      "name": "Pre-FilterAI: Cek Relevansi Query",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -2176,
+        240
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Pre-FilterAI: Cek Relevansi Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embed User Query": {
+      "main": [
+        [
+          {
+            "node": "Merge Multi Embeddings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Vector Search": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Rerank": {
+      "main": [
+        [
+          {
+            "node": "Parse Rerank Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Rerank Results": {
+      "main": [
+        [
+          {
+            "node": "Format Context for LLM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Context for LLM": {
+      "main": [
+        [
+          {
+            "node": "Cek Relevance Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cek Relevance Score": {
+      "main": [
+        [
+          {
+            "node": "LLM Synthesis (True)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Bypass Output (False)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Bypass Output (False)": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Ditolak)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "LLM Synthesis (True)": {
+      "main": [
+        [
+          {
+            "node": "Format Final Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Final Output": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Sukses)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Intelligence": {
+      "main": [
+        [
+          {
+            "node": "Parse Query Intelligence",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Query Intelligence": {
+      "main": [
+        [
+          {
+            "node": "Embed User Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Multi Embeddings": {
+      "main": [
+        [
+          {
+            "node": "Postgres Vector Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Rerank",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format No Data Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format No Data Output": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Not Found)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If1": {
+      "main": [
+        [
+          {
+            "node": "Query Intelligence",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Off-Topic Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Off-Topic Output": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (Not Found)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pre-FilterAI: Cek Relevansi Query": {
+      "main": [
+        [
+          {
+            "node": "If1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "22a20baa-f93d-4e03-bb42-db7d9e92e6d0",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0bc038e49b07af2e3e858246c7c482b54ba66879f695b1ba1f1900faa8f7d141"
+  },
+  "id": "Up2IkgmoP1SpnHs8",
+  "tags": []
+}
