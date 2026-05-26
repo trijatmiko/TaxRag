@@ -1,0 +1,1210 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG Pajak Indonesia</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0e14;
+    --surface: #111720;
+    --surface-2: #16202e;
+    --border: #1e2d3d;
+    --border-hover: #2a3f55;
+    --accent: #00d4aa;
+    --accent-dim: rgba(0,212,170,0.12);
+    --accent-glow: rgba(0,212,170,0.06);
+    --text-primary: #e8f0f8;
+    --text-secondary: #7a9ab5;
+    --text-muted: #3d5572;
+    --danger: #ff6b6b;
+    --warning: #ffa94d;
+    --info: #4dabf7;
+    --success: #00d4aa;
+    --tag-def: rgba(77,171,247,0.15);
+    --tag-def-text: #74c0fc;
+    --tag-kewajiban: rgba(0,212,170,0.15);
+    --tag-kewajiban-text: #63e6be;
+    --tag-sanksi: rgba(255,107,107,0.15);
+    --tag-sanksi-text: #ff9898;
+    --tag-prosedur: rgba(255,169,77,0.15);
+    --tag-prosedur-text: #ffca8e;
+    --tag-pengecualian: rgba(200,150,255,0.15);
+    --tag-pengecualian-text: #da8fff;
+    --tag-batas: rgba(255,212,59,0.15);
+    --tag-batas-text: #ffe066;
+    --radius: 6px;
+    --radius-lg: 10px;
+    --font: 'IBM Plex Sans', sans-serif;
+    --mono: 'IBM Plex Mono', monospace;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── HEADER ── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-mark {
+    width: 32px;
+    height: 32px;
+    background: var(--accent);
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .logo-mark svg {
+    width: 18px;
+    height: 18px;
+    fill: #0a0e14;
+  }
+
+  .logo-text {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    color: var(--text-primary);
+  }
+
+  .logo-sub {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  .header-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+
+  .status-dot.connected {
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* ── LAYOUT ── */
+  .app {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: 280px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  .sidebar-section {
+    padding: 20px 20px 0;
+  }
+
+  .sidebar-label {
+    font-size: 10px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+
+  .filter-group {
+    margin-bottom: 20px;
+  }
+
+  .filter-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    display: block;
+  }
+
+  select {
+    width: 100%;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    font-family: var(--font);
+    font-size: 13px;
+    padding: 8px 10px;
+    appearance: none;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%237a9ab5'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 28px;
+  }
+
+  select:hover { border-color: var(--border-hover); }
+  select:focus { outline: none; border-color: var(--accent); }
+
+  .sidebar-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 4px 0 16px;
+  }
+
+  .history-list {
+    padding: 0 20px 20px;
+    flex: 1;
+  }
+
+  .history-item {
+    padding: 10px 12px;
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.12s;
+    margin-bottom: 4px;
+    border: 1px solid transparent;
+  }
+
+  .history-item:hover {
+    background: var(--surface-2);
+    border-color: var(--border);
+  }
+
+  .history-item-text {
+    font-size: 12px;
+    color: var(--text-secondary);
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .history-item-time {
+    font-size: 10px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  /* ── MAIN ── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── CHAT AREA ── */
+  .chat {
+    flex: 1;
+    overflow-y: auto;
+    padding: 32px 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  /* Scrollbar */
+  .chat::-webkit-scrollbar { width: 4px; }
+  .chat::-webkit-scrollbar-track { background: transparent; }
+  .chat::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* ── EMPTY STATE ── */
+  .empty {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 48px;
+  }
+
+  .empty-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    max-width: 520px;
+    margin-top: 32px;
+  }
+
+  .empty-chip {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-size: 13px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: left;
+    line-height: 1.4;
+    transition: all 0.15s;
+  }
+
+  .empty-chip:hover {
+    border-color: var(--accent);
+    color: var(--text-primary);
+    background: var(--accent-dim);
+  }
+
+  .empty-icon {
+    width: 48px;
+    height: 48px;
+    background: var(--accent-dim);
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+  }
+
+  .empty-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+    letter-spacing: -0.3px;
+  }
+
+  .empty-desc {
+    font-size: 14px;
+    color: var(--text-secondary);
+    line-height: 1.6;
+    max-width: 380px;
+  }
+
+  /* ── MESSAGES ── */
+  .msg-user {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .msg-user-bubble {
+    background: var(--accent-dim);
+    border: 1px solid rgba(0,212,170,0.2);
+    border-radius: var(--radius-lg);
+    border-bottom-right-radius: 2px;
+    padding: 12px 16px;
+    max-width: 70%;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--text-primary);
+  }
+
+  .msg-ai {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    max-width: 90%;
+  }
+
+  .ai-avatar {
+    width: 28px;
+    height: 28px;
+    background: var(--accent);
+    border-radius: 4px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 2px;
+  }
+
+  .ai-avatar svg {
+    width: 16px;
+    height: 16px;
+    fill: #0a0e14;
+  }
+
+  .ai-body {
+    flex: 1;
+  }
+
+  /* ── CONFIDENCE BADGE ── */
+  .confidence {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-family: var(--mono);
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+    letter-spacing: 0.3px;
+  }
+
+  .confidence.HIGH {
+    background: rgba(0,212,170,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(0,212,170,0.2);
+  }
+
+  .confidence.MEDIUM {
+    background: rgba(255,169,77,0.12);
+    color: var(--warning);
+    border: 1px solid rgba(255,169,77,0.2);
+  }
+
+  .confidence.LOW, .confidence.NONE {
+    background: rgba(255,107,107,0.1);
+    color: var(--danger);
+    border: 1px solid rgba(255,107,107,0.2);
+  }
+
+  /* ── ANSWER TEXT ── */
+  .answer-text {
+    font-size: 14px;
+    line-height: 1.8;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+  }
+
+  /* ── SOURCES ── */
+  .sources {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+
+  .sources-title {
+    font-size: 11px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+
+  .sources-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .source-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    transition: border-color 0.15s;
+  }
+
+  .source-card:hover { border-color: var(--border-hover); }
+
+  .source-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+    gap: 8px;
+  }
+
+  .source-ref {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--accent);
+  }
+
+  .source-score {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .source-title {
+    font-size: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    line-height: 1.4;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .source-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 6px;
+  }
+
+  .tag {
+    font-size: 10px;
+    font-family: var(--mono);
+    padding: 2px 7px;
+    border-radius: 3px;
+    letter-spacing: 0.3px;
+  }
+
+  .tag-def { background: var(--tag-def); color: var(--tag-def-text); }
+  .tag-kewajiban { background: var(--tag-kewajiban); color: var(--tag-kewajiban-text); }
+  .tag-sanksi { background: var(--tag-sanksi); color: var(--tag-sanksi-text); }
+  .tag-prosedur { background: var(--tag-prosedur); color: var(--tag-prosedur-text); }
+  .tag-pengecualian { background: var(--tag-pengecualian); color: var(--tag-pengecualian-text); }
+  .tag-batas { background: var(--tag-batas); color: var(--tag-batas-text); }
+  .tag-domain { background: rgba(122,154,181,0.12); color: var(--text-secondary); }
+  .tag-hierarki { background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border); }
+
+  .source-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-decoration: none;
+    margin-top: 6px;
+    transition: color 0.12s;
+  }
+
+  .source-link:hover { color: var(--accent); }
+
+  /* ── CONFLICT BANNER ── */
+  .conflict-banner {
+    background: rgba(255,169,77,0.08);
+    border: 1px solid rgba(255,169,77,0.2);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--warning);
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  /* ── META INFO ── */
+  .meta-info {
+    display: flex;
+    gap: 16px;
+    margin-top: 10px;
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    flex-wrap: wrap;
+  }
+
+  .meta-pill {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  /* ── LOADING ── */
+  .loading-dots {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    padding: 12px 0;
+  }
+
+  .loading-dots span {
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: bounce 1.2s infinite;
+    opacity: 0.4;
+  }
+
+  .loading-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .loading-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes bounce {
+    0%, 100% { transform: translateY(0); opacity: 0.4; }
+    50% { transform: translateY(-4px); opacity: 1; }
+  }
+
+  /* ── INPUT AREA ── */
+  .input-area {
+    padding: 20px 48px 28px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+
+  .input-wrap {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 12px 14px;
+    transition: border-color 0.15s;
+  }
+
+  .input-wrap:focus-within {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow);
+  }
+
+  textarea {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--text-primary);
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.6;
+    resize: none;
+    max-height: 160px;
+    min-height: 24px;
+    height: 24px;
+  }
+
+  textarea::placeholder { color: var(--text-muted); }
+
+  .send-btn {
+    width: 34px;
+    height: 34px;
+    background: var(--accent);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    align-self: flex-end;
+  }
+
+  .send-btn:hover { background: #00bfa0; transform: translateY(-1px); }
+  .send-btn:active { transform: scale(0.95); }
+  .send-btn:disabled { opacity: 0.3; cursor: not-allowed; transform: none; }
+
+  .send-btn svg {
+    width: 16px;
+    height: 16px;
+    fill: #0a0e14;
+  }
+
+  .input-hint {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    padding: 0 2px;
+  }
+
+  .input-hint-text {
+    font-size: 11px;
+    color: var(--text-muted);
+    font-family: var(--mono);
+  }
+
+  /* ── ENDPOINT CONFIG ── */
+  .endpoint-bar {
+    padding: 8px 48px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .endpoint-label {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .endpoint-input {
+    flex: 1;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .endpoint-input:focus { border-color: var(--accent); color: var(--text-primary); }
+
+  .save-btn {
+    font-size: 12px;
+    font-family: var(--mono);
+    background: var(--accent-dim);
+    border: 1px solid rgba(0,212,170,0.25);
+    color: var(--accent);
+    padding: 5px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all 0.15s;
+  }
+
+  .save-btn:hover { background: rgba(0,212,170,0.2); }
+
+  /* ── REJECTED STATE ── */
+  .rejected-box {
+    background: rgba(255,107,107,0.06);
+    border: 1px solid rgba(255,107,107,0.15);
+    border-radius: var(--radius-lg);
+    padding: 16px 20px;
+  }
+
+  .rejected-box .answer-text { color: var(--text-secondary); }
+
+  /* ── DISCLAIMER ── */
+  .disclaimer {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 14px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    font-style: italic;
+  }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 768px) {
+    .sidebar { display: none; }
+    .chat { padding: 20px 20px; }
+    .input-area { padding: 16px 20px 20px; }
+    .endpoint-bar { padding: 8px 20px; }
+    .msg-ai { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header>
+  <div class="logo">
+    <div class="logo-mark">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <div>
+      <div class="logo-text">RAG Pajak Indonesia</div>
+      <div class="logo-sub">Peraturan Perpajakan · Berbasis AI</div>
+    </div>
+  </div>
+  <div class="header-status">
+    <div class="status-dot" id="statusDot"></div>
+    <span id="statusText">belum terhubung</span>
+  </div>
+</header>
+
+<!-- ENDPOINT BAR -->
+<div class="endpoint-bar">
+  <span class="endpoint-label">ENDPOINT</span>
+  <input class="endpoint-input" type="text" id="endpointInput"
+    placeholder="https://your-n8n.domain.com/webhook/query-pajak"
+    value="">
+  <button class="save-btn" onclick="saveEndpoint()">Simpan</button>
+</div>
+
+<!-- APP -->
+<div class="app">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Filter Dokumen</div>
+
+      <div class="filter-group">
+        <label class="filter-label">Jenis Pajak</label>
+        <select id="filterJenisPajak">
+          <option value="">Auto-detect</option>
+          <option value="PPh">PPh – Pajak Penghasilan</option>
+          <option value="PPN">PPN – Pertambahan Nilai</option>
+          <option value="PPnBM">PPnBM – Barang Mewah</option>
+          <option value="KUP">KUP – Ketentuan Umum</option>
+          <option value="PBB">PBB – Bumi & Bangunan</option>
+          <option value="Bea_Cukai">Bea Cukai</option>
+          <option value="Bea Meterai">Bea Meterai</option>
+          <option value="Pajak Karbon">Pajak Karbon</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">Jenis Peraturan</label>
+        <select id="filterDocType">
+          <option value="">Semua</option>
+          <option value="UU">UU – Undang-Undang</option>
+          <option value="PP">PP – Peraturan Pemerintah</option>
+          <option value="PMK">PMK – Peraturan Menteri Keuangan</option>
+          <option value="PER">PER – Peraturan Eselon I</option>
+          <option value="KMK">KMK – Keputusan Menteri</option>
+          <option value="SE">SE – Surat Edaran</option>
+        </select>
+      </div>
+
+      <div class="filter-group">
+        <label class="filter-label">Domain Utama</label>
+        <select id="filterDomain">
+          <option value="">Auto-detect</option>
+          <option value="PPh">PPh</option>
+          <option value="PPN">PPN</option>
+          <option value="PPnBM">PPnBM</option>
+          <option value="PBB">PBB</option>
+          <option value="KUP">KUP</option>
+          <option value="Cukai">Cukai</option>
+          <option value="Bea Meterai">Bea Meterai</option>
+          <option value="Pajak Karbon">Pajak Karbon</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="sidebar-divider"></div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">Riwayat</div>
+    </div>
+    <div class="history-list" id="historyList">
+      <div style="font-size:12px; color:var(--text-muted); padding:4px 0;">
+        Belum ada riwayat pertanyaan.
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <main class="main">
+    <!-- CHAT -->
+    <div class="chat" id="chat">
+      <!-- EMPTY STATE -->
+      <div class="empty" id="emptyState">
+        <div class="empty-icon">
+          <svg width="24" height="24" fill="none" stroke="var(--accent)" stroke-width="1.5" viewBox="0 0 24 24">
+            <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+          </svg>
+        </div>
+        <div class="empty-title">Tanya Peraturan Pajak</div>
+        <div class="empty-desc">
+          Jawaban langsung dari database peraturan perpajakan Indonesia — UU, PP, PMK, PER, KMK, dan SE.
+        </div>
+        <div class="empty-grid">
+          <div class="empty-chip" onclick="askQuestion('Berapa tarif PPh badan untuk UMKM?')">
+            Berapa tarif PPh badan untuk UMKM?
+          </div>
+          <div class="empty-chip" onclick="askQuestion('Apa sanksi keterlambatan penyampaian SPT tahunan?')">
+            Apa sanksi keterlambatan penyampaian SPT tahunan?
+          </div>
+          <div class="empty-chip" onclick="askQuestion('Bagaimana cara menghitung PPh pasal 21 karyawan?')">
+            Bagaimana menghitung PPh pasal 21 karyawan?
+          </div>
+          <div class="empty-chip" onclick="askQuestion('Apa saja objek PPN yang dikecualikan?')">
+            Apa saja objek PPN yang dikecualikan?
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- INPUT -->
+    <div class="input-area">
+      <div class="input-wrap">
+        <textarea id="queryInput"
+          placeholder="Tanya tentang peraturan perpajakan Indonesia..."
+          rows="1"
+          onkeydown="handleKey(event)"
+          oninput="autoResize(this)"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendQuery()" title="Kirim">
+          <svg viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+        </button>
+      </div>
+      <div class="input-hint">
+        <span class="input-hint-text">Enter kirim · Shift+Enter baris baru</span>
+        <span class="input-hint-text" id="charCount">0 karakter</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+let endpoint = localStorage.getItem('rag_endpoint') || '';
+let isLoading = false;
+const history = JSON.parse(localStorage.getItem('rag_history') || '[]');
+
+// ── INIT ──
+window.onload = () => {
+  const inp = document.getElementById('endpointInput');
+  inp.value = endpoint;
+  renderHistory();
+  updateStatus();
+  document.getElementById('queryInput').focus();
+};
+
+// ── ENDPOINT ──
+function saveEndpoint() {
+  endpoint = document.getElementById('endpointInput').value.trim();
+  localStorage.setItem('rag_endpoint', endpoint);
+  updateStatus();
+  showToast('Endpoint disimpan');
+}
+
+function updateStatus() {
+  const dot = document.getElementById('statusDot');
+  const txt = document.getElementById('statusText');
+  if (endpoint) {
+    dot.className = 'status-dot connected';
+    const url = new URL(endpoint.startsWith('http') ? endpoint : 'https://' + endpoint);
+    txt.textContent = url.hostname;
+  } else {
+    dot.className = 'status-dot';
+    txt.textContent = 'belum terhubung';
+  }
+}
+
+// ── QUERY ──
+function handleKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendQuery();
+  }
+}
+
+function autoResize(el) {
+  el.style.height = '24px';
+  el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  document.getElementById('charCount').textContent = el.value.length + ' karakter';
+}
+
+function askQuestion(q) {
+  document.getElementById('queryInput').value = q;
+  autoResize(document.getElementById('queryInput'));
+  sendQuery();
+}
+
+async function sendQuery() {
+  const input = document.getElementById('queryInput');
+  const query = input.value.trim();
+  if (!query || isLoading) return;
+
+  if (!endpoint) {
+    showToast('Masukkan endpoint n8n terlebih dahulu', 'danger');
+    document.getElementById('endpointInput').focus();
+    return;
+  }
+
+  // Hide empty state
+  document.getElementById('emptyState').style.display = 'none';
+
+  // Append user message
+  appendUserMsg(query);
+
+  // Clear input
+  input.value = '';
+  input.style.height = '24px';
+  document.getElementById('charCount').textContent = '0 karakter';
+
+  // Append loading
+  const loadingId = appendLoading();
+
+  isLoading = true;
+  document.getElementById('sendBtn').disabled = true;
+
+  const body = {
+    query: query,
+    jenis_pajak: document.getElementById('filterJenisPajak').value || undefined,
+    doc_type:    document.getElementById('filterDocType').value    || undefined,
+    primary_domain: document.getElementById('filterDomain').value  || undefined,
+  };
+
+  // Remove undefined
+  Object.keys(body).forEach(k => body[k] === undefined && delete body[k]);
+
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    const data = await res.json();
+    removeLoading(loadingId);
+    appendAIMsg(data, query);
+    saveHistory(query);
+
+  } catch(err) {
+    removeLoading(loadingId);
+    appendError(err.message);
+  }
+
+  isLoading = false;
+  document.getElementById('sendBtn').disabled = false;
+  document.getElementById('queryInput').focus();
+}
+
+// ── RENDER MESSAGES ──
+function appendUserMsg(text) {
+  const chat = document.getElementById('chat');
+  const el = document.createElement('div');
+  el.className = 'msg-user';
+  el.innerHTML = `<div class="msg-user-bubble">${escHtml(text)}</div>`;
+  chat.appendChild(el);
+  scrollChat();
+}
+
+function appendLoading() {
+  const chat = document.getElementById('chat');
+  const id = 'load-' + Date.now();
+  const el = document.createElement('div');
+  el.className = 'msg-ai';
+  el.id = id;
+  el.innerHTML = `
+    ${aiAvatar()}
+    <div class="ai-body">
+      <div class="loading-dots">
+        <span></span><span></span><span></span>
+      </div>
+    </div>`;
+  chat.appendChild(el);
+  scrollChat();
+  return id;
+}
+
+function removeLoading(id) {
+  const el = document.getElementById(id);
+  if (el) el.remove();
+}
+
+function appendAIMsg(data, query) {
+  const chat = document.getElementById('chat');
+  const el = document.createElement('div');
+  el.className = 'msg-ai';
+
+  const isRejected = data.status === 'rejected' || data.status === 'off_topic' || data.confidence === 'NONE';
+  const answer = data.answer || 'Tidak ada jawaban yang diterima.';
+  const sources = data.sources || [];
+  const conflicts = data.conflicts || [];
+  const confidence = data.confidence || 'NONE';
+  const autoDetected = data.auto_detected || {};
+
+  // Confidence badge
+  const confBadge = `<div class="confidence ${confidence}">
+    <span style="width:5px;height:5px;border-radius:50%;background:currentColor;display:inline-block;flex-shrink:0;"></span>
+    ${confidence} CONFIDENCE · score ${((data.rerank_score || 0) * 100).toFixed(0)}%
+  </div>`;
+
+  // Meta info
+  let metaHtml = '';
+  if (autoDetected.jenis_pajak || autoDetected.primary_domain || autoDetected.doc_type) {
+    metaHtml = `<div class="meta-info">`;
+    if (autoDetected.jenis_pajak) metaHtml += `<span class="meta-pill">jenis: ${autoDetected.jenis_pajak}</span>`;
+    if (autoDetected.primary_domain) metaHtml += `<span class="meta-pill">domain: ${autoDetected.primary_domain}</span>`;
+    if (autoDetected.doc_type) metaHtml += `<span class="meta-pill">tipe: ${autoDetected.doc_type}</span>`;
+    metaHtml += `</div>`;
+  }
+
+  // Answer
+  let answerSection = `<div class="answer-text">${escHtml(answer)}</div>`;
+  if (isRejected) {
+    answerSection = `<div class="rejected-box"><div class="answer-text">${escHtml(answer)}</div></div>`;
+  }
+
+  // Conflicts
+  let conflictHtml = '';
+  if (conflicts.length > 0) {
+    conflictHtml = `<div class="conflict-banner">
+      <span style="flex-shrink:0">⚠</span>
+      <span>Ditemukan ${conflicts.length} konflik antar peraturan. Gunakan hierarki tertinggi dan tahun terbaru.</span>
+    </div>`;
+  }
+
+  // Sources
+  let sourcesHtml = '';
+  if (sources.length > 0) {
+    const sourceCards = sources.map((s, i) => {
+      const hierarki = ['UU','PP','PMK','PER','KMK','SE'];
+      const hierIdx = hierarki.indexOf(s.doc_type);
+      const hierLabel = hierIdx >= 0 ? `H${hierIdx+1}` : '';
+
+      const tags = [];
+      if (s.semantic_type === 'definition' || (s.chunk_summary && s.chunk_summary.includes('Definisi'))) tags.push('<span class="tag tag-def">definisi</span>');
+      if (s.semantic_type === 'obligation') tags.push('<span class="tag tag-kewajiban">kewajiban</span>');
+      if (s.semantic_type === 'sanction') tags.push('<span class="tag tag-sanksi">sanksi</span>');
+      if (s.semantic_type === 'procedure') tags.push('<span class="tag tag-prosedur">prosedur</span>');
+      if (s.semantic_type === 'exception') tags.push('<span class="tag tag-pengecualian">pengecualian</span>');
+      if (s.semantic_type === 'timeline') tags.push('<span class="tag tag-batas">batas waktu</span>');
+      if (s.primary_domain && s.primary_domain !== 'UMUM') tags.push(`<span class="tag tag-domain">${s.primary_domain}</span>`);
+      if (hierLabel) tags.push(`<span class="tag tag-hierarki">${hierLabel}</span>`);
+
+      const scoreText = s.final_score
+        ? (s.final_score * 100).toFixed(0) + '%'
+        : s.rerank_score
+          ? (s.rerank_score * 100).toFixed(0) + '%'
+          : '';
+
+      const summary = s.chunk_summary
+        ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;font-style:italic;line-height:1.4;">${escHtml(s.chunk_summary.substring(0, 120))}${s.chunk_summary.length > 120 ? '…' : ''}</div>`
+        : '';
+
+      const link = s.source_url
+        ? `<a class="source-link" href="${s.source_url}" target="_blank">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>
+            Lihat peraturan
+          </a>`
+        : '';
+
+      return `<div class="source-card">
+        <div class="source-header">
+          <span class="source-ref">${escHtml(s.doc_type || '')} ${escHtml(s.doc_number || '')}/${escHtml(String(s.doc_year || ''))}</span>
+          <span class="source-score">${scoreText}</span>
+        </div>
+        <div class="source-title">${escHtml(s.doc_title || '')} — Pasal ${escHtml(s.pasal_number || '-')}</div>
+        ${summary}
+        ${tags.length ? `<div class="source-tags">${tags.join('')}</div>` : ''}
+        ${link}
+      </div>`;
+    }).join('');
+
+    sourcesHtml = `<div class="sources">
+      <div class="sources-title">Sumber Peraturan (${sources.length})</div>
+      <div class="sources-grid">${sourceCards}</div>
+    </div>`;
+  }
+
+  el.innerHTML = `
+    ${aiAvatar()}
+    <div class="ai-body">
+      ${confBadge}
+      ${metaHtml}
+      ${answerSection}
+      ${conflictHtml}
+      ${sourcesHtml}
+      <div class="disclaimer">Jawaban berdasarkan dokumen dalam database. Konsultasikan keputusan bisnis dengan konsultan pajak berlisensi atau KPP setempat.</div>
+    </div>`;
+
+  chat.appendChild(el);
+  scrollChat();
+}
+
+function appendError(msg) {
+  const chat = document.getElementById('chat');
+  const el = document.createElement('div');
+  el.className = 'msg-ai';
+  el.innerHTML = `
+    ${aiAvatar()}
+    <div class="ai-body">
+      <div style="background:rgba(255,107,107,0.06);border:1px solid rgba(255,107,107,0.2);border-radius:var(--radius);padding:12px 14px;">
+        <div style="font-size:12px;font-family:var(--mono);color:var(--danger);margin-bottom:6px;">KONEKSI GAGAL</div>
+        <div style="font-size:13px;color:var(--text-secondary);">${escHtml(msg)}</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">Periksa endpoint n8n dan pastikan webhook aktif.</div>
+      </div>
+    </div>`;
+  chat.appendChild(el);
+  scrollChat();
+}
+
+// ── HELPERS ──
+function aiAvatar() {
+  return `<div class="ai-avatar">
+    <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+  </div>`;
+}
+
+function scrollChat() {
+  const chat = document.getElementById('chat');
+  chat.scrollTop = chat.scrollHeight;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ── HISTORY ──
+function saveHistory(query) {
+  history.unshift({ q: query, t: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) });
+  if (history.length > 20) history.pop();
+  localStorage.setItem('rag_history', JSON.stringify(history));
+  renderHistory();
+}
+
+function renderHistory() {
+  const el = document.getElementById('historyList');
+  if (history.length === 0) {
+    el.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">Belum ada riwayat pertanyaan.</div>`;
+    return;
+  }
+  el.innerHTML = history.map(h => `
+    <div class="history-item" onclick="askQuestion(${JSON.stringify(h.q)})">
+      <div class="history-item-text">${escHtml(h.q)}</div>
+      <div class="history-item-time">${h.t}</div>
+    </div>`).join('');
+}
+
+// ── TOAST ──
+function showToast(msg, type = 'success') {
+  const existing = document.getElementById('toast');
+  if (existing) existing.remove();
+
+  const t = document.createElement('div');
+  t.id = 'toast';
+  const color = type === 'danger' ? 'var(--danger)' : 'var(--accent)';
+  t.style.cssText = `
+    position:fixed;bottom:24px;right:24px;
+    background:var(--surface);border:1px solid ${color};
+    color:${color};font-family:var(--mono);font-size:12px;
+    padding:10px 16px;border-radius:var(--radius);
+    z-index:999;animation:slideIn 0.2s ease;
+  `;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 2500);
+}
+
+const style = document.createElement('style');
+style.textContent = `@keyframes slideIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}`;
+document.head.appendChild(style);
+</script>
+</body>
+</html>
