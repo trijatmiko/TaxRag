@@ -6,8 +6,8 @@ n8n-data/
 postgres-data/
 
 # Next.js
-frontend/node_modules/
-frontend/.next/
+#frontend/node_modules/
+#frontend/.next/
 
 # OS & editor
 .DS_Store

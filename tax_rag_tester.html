@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tax RAG — Testing Console</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Syne:wght@400;500;600;700;800&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0a0c0f;
+    --bg2:       #111418;
+    --bg3:       #181c22;
+    --bg4:       #1e232b;
+    --border:    #252b35;
+    --border2:   #2e3540;
+    --text:      #e8eaf0;
+    --text2:     #8b93a5;
+    --text3:     #555f72;
+    --accent:    #3ee8b5;
+    --accent2:   #1fb889;
+    --warn:      #f5a623;
+    --danger:    #e85555;
+    --info:      #5b9cf6;
+    --purple:    #9b7ff4;
+    --radius:    8px;
+    --radius-lg: 14px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── GRID NOISE BACKGROUND ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 20% 0%, rgba(62,232,181,.06) 0%, transparent 60%),
+      radial-gradient(ellipse 60% 40% at 80% 100%, rgba(91,156,246,.05) 0%, transparent 60%),
+      repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(255,255,255,.015) 39px, rgba(255,255,255,.015) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(255,255,255,.015) 39px, rgba(255,255,255,.015) 40px);
+    pointer-events: none; z-index: 0;
+  }
+
+  .shell { position: relative; z-index: 1; display: grid; grid-template-columns: 300px 1fr; min-height: 100vh; }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    padding: 0;
+    position: sticky; top: 0; height: 100vh; overflow-y: auto;
+  }
+
+  .logo {
+    padding: 22px 20px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .logo-mark {
+    font-family: 'Instrument Serif', serif;
+    font-size: 20px;
+    font-style: italic;
+    color: var(--accent);
+    letter-spacing: -.3px;
+  }
+  .logo-sub {
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-top: 2px;
+  }
+
+  .sidebar-section { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .sidebar-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 10px;
+  }
+
+  /* Config fields */
+  .field { margin-bottom: 10px; }
+  .field label { font-size: 11px; color: var(--text2); display: block; margin-bottom: 4px; font-weight: 500; }
+  .field input, .field select, .field textarea {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: 'DM Mono', monospace;
+    font-size: 11px;
+    padding: 7px 10px;
+    outline: none;
+    transition: border-color .15s;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    border-color: var(--accent);
+  }
+  .field select option { background: var(--bg3); }
+  .field textarea { resize: vertical; min-height: 60px; }
+
+  /* Mode toggle */
+  .mode-toggle { display: flex; gap: 6px; }
+  .mode-btn {
+    flex: 1; padding: 6px 4px; border: 1px solid var(--border2); border-radius: var(--radius);
+    background: transparent; color: var(--text3); font-family: 'Syne', sans-serif;
+    font-size: 10px; font-weight: 600; cursor: pointer; transition: all .15s;
+    text-align: center;
+  }
+  .mode-btn.active { background: var(--accent); border-color: var(--accent); color: #0a0c0f; }
+
+  /* Quick test buttons */
+  .quick-tests { display: flex; flex-direction: column; gap: 5px; }
+  .quick-btn {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 10px;
+    color: var(--text2); font-family: 'Syne', sans-serif; font-size: 11px;
+    cursor: pointer; text-align: left; transition: all .15s;
+    line-height: 1.3;
+  }
+  .quick-btn:hover { border-color: var(--accent); color: var(--text); }
+  .quick-btn .qt-tag {
+    display: inline-block; font-size: 9px; font-weight: 600;
+    padding: 1px 5px; border-radius: 3px; margin-bottom: 3px;
+    text-transform: uppercase; letter-spacing: .06em;
+  }
+  .tag-low    { background: rgba(62,232,181,.15); color: var(--accent); }
+  .tag-med    { background: rgba(245,166,35,.15); color: var(--warn); }
+  .tag-high   { background: rgba(232,85,85,.15); color: var(--danger); }
+  .tag-gen    { background: rgba(91,156,246,.15); color: var(--info); }
+  .tag-tp     { background: rgba(155,127,244,.15); color: var(--purple); }
+
+  /* Status dot */
+  .status-row { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); flex-shrink: 0; }
+  .dot.green { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+  .dot.red   { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+  .dot.pulse { animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── MAIN AREA ── */
+  .main { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* TOPBAR */
+  .topbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 24px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .topbar-title { font-size: 13px; font-weight: 700; color: var(--text); flex: 1; }
+  .topbar-mode {
+    font-size: 10px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 20px; border: 1px solid;
+  }
+  .topbar-mode.general { color: var(--info); border-color: rgba(91,156,246,.4); background: rgba(91,156,246,.08); }
+  .topbar-mode.avoidance { color: var(--accent); border-color: rgba(62,232,181,.4); background: rgba(62,232,181,.08); }
+
+  /* TAB NAV */
+  .tab-nav {
+    display: flex; gap: 0;
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    background: var(--bg2);
+  }
+  .tab-item {
+    padding: 12px 18px; font-size: 12px; font-weight: 600;
+    color: var(--text3); cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all .15s; white-space: nowrap;
+  }
+  .tab-item.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-item:hover:not(.active) { color: var(--text2); }
+
+  /* PANELS */
+  .panel { display: none; flex: 1; }
+  .panel.active { display: flex; flex-direction: column; }
+
+  /* ── QUERY PANEL ── */
+  .query-area { padding: 24px; flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+  .query-box {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    transition: border-color .2s;
+  }
+  .query-box:focus-within { border-color: var(--accent); }
+  .query-box textarea {
+    width: 100%; background: transparent; border: none; color: var(--text);
+    font-family: 'Instrument Serif', serif; font-size: 17px; line-height: 1.5;
+    padding: 18px 20px 10px; outline: none; resize: none; min-height: 80px;
+  }
+  .query-box textarea::placeholder { color: var(--text3); font-style: italic; }
+  .query-footer {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 16px; border-top: 1px solid var(--border);
+  }
+  .query-meta { font-size: 11px; color: var(--text3); font-family: 'DM Mono', monospace; }
+
+  .send-btn {
+    background: var(--accent); color: #0a0c0f;
+    border: none; border-radius: var(--radius); padding: 9px 20px;
+    font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700;
+    cursor: pointer; transition: all .15s; display: flex; align-items: center; gap: 6px;
+  }
+  .send-btn:hover { background: var(--accent2); }
+  .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .send-btn .spinner {
+    width: 12px; height: 12px; border: 2px solid rgba(0,0,0,.3);
+    border-top-color: #000; border-radius: 50%;
+    animation: spin .6s linear infinite; display: none;
+  }
+  .send-btn.loading .spinner { display: block; }
+  .send-btn.loading .btn-label { display: none; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── RESULT AREA ── */
+  .result-area { padding: 0 24px 24px; display: flex; flex-direction: column; gap: 14px; }
+
+  .result-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 4px;
+  }
+  .result-label {
+    font-size: 10px; font-weight: 700; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--text3);
+  }
+  .result-meta { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text3); }
+
+  .answer-card {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 20px;
+    border-left: 3px solid var(--accent);
+  }
+  .answer-text {
+    font-family: 'Instrument Serif', serif; font-size: 15px;
+    line-height: 1.7; color: var(--text); white-space: pre-wrap;
+  }
+  .answer-text strong { font-weight: 600; color: var(--accent); }
+
+  /* Confidence badge */
+  .conf-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 10px; font-weight: 600; padding: 3px 9px;
+    border-radius: 20px; text-transform: uppercase; letter-spacing: .06em;
+  }
+  .conf-high   { background: rgba(62,232,181,.12); color: var(--accent); border: 1px solid rgba(62,232,181,.3); }
+  .conf-medium { background: rgba(245,166,35,.12); color: var(--warn); border: 1px solid rgba(245,166,35,.3); }
+  .conf-low    { background: rgba(232,85,85,.12); color: var(--danger); border: 1px solid rgba(232,85,85,.3); }
+
+  /* Gaps section */
+  .gaps-grid { display: flex; flex-direction: column; gap: 8px; }
+  .gap-card {
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 14px 16px;
+    position: relative; overflow: hidden;
+  }
+  .gap-card::before {
+    content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+    width: 3px;
+  }
+  .gap-card.risk-low::before    { background: var(--accent); }
+  .gap-card.risk-med::before    { background: var(--warn); }
+  .gap-card.risk-high::before   { background: var(--danger); }
+
+  .gap-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .gap-type {
+    font-size: 10px; font-weight: 700; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--text3); font-family: 'DM Mono', monospace;
+  }
+  .risk-pill {
+    font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 12px;
+    text-transform: uppercase; letter-spacing: .05em; flex-shrink: 0;
+  }
+  .risk-pill.low    { background: rgba(62,232,181,.15); color: var(--accent); }
+  .risk-pill.medium { background: rgba(245,166,35,.15); color: var(--warn); }
+  .risk-pill.high   { background: rgba(232,85,85,.15); color: var(--danger); }
+
+  .gap-desc { font-size: 13px; color: var(--text); margin-bottom: 6px; }
+  .gap-row { display: flex; gap: 6px; align-items: flex-start; margin-top: 4px; }
+  .gap-key { font-size: 10px; color: var(--text3); font-weight: 600; min-width: 90px; flex-shrink: 0; font-family: 'DM Mono', monospace; text-transform: uppercase; }
+  .gap-val { font-size: 11px; color: var(--text2); font-family: 'DM Mono', monospace; }
+
+  .risk-bar-wrap { margin-top: 8px; }
+  .risk-bar-bg { height: 4px; background: var(--border); border-radius: 2px; }
+  .risk-bar-fill { height: 4px; border-radius: 2px; transition: width .6s ease; }
+
+  /* Sources section */
+  .sources-list { display: flex; flex-direction: column; gap: 5px; }
+  .source-chip {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 8px 12px;
+    font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text2);
+  }
+  .source-type {
+    font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+    text-transform: uppercase; letter-spacing: .06em;
+    background: var(--bg4); color: var(--text3); flex-shrink: 0;
+  }
+  .source-type.uu  { background: rgba(155,127,244,.15); color: var(--purple); }
+  .source-type.pp  { background: rgba(62,232,181,.12); color: var(--accent); }
+  .source-type.pmk { background: rgba(91,156,246,.12); color: var(--info); }
+  .source-type.per { background: rgba(245,166,35,.12); color: var(--warn); }
+
+  /* ── CLIENT PANEL ── */
+  .client-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 14px; padding: 24px;
+  }
+  .form-section {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 16px;
+  }
+  .form-section-title {
+    font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--text3); margin-bottom: 14px; display: flex; align-items: center; gap: 6px;
+  }
+  .form-section-title span { font-size: 13px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .profile-input {
+    width: 100%; background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: var(--radius); color: var(--text);
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    padding: 7px 10px; outline: none; transition: border-color .15s;
+    margin-bottom: 8px;
+  }
+  .profile-input:focus { border-color: var(--accent); }
+  .profile-input::placeholder { color: var(--text3); }
+  .profile-label { font-size: 10px; color: var(--text3); margin-bottom: 3px; display: block; font-weight: 500; }
+
+  .computed-card {
+    background: var(--bg4); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    margin-top: 4px;
+  }
+  .computed-row { display: flex; justify-content: space-between; align-items: center; padding: 3px 0; }
+  .computed-key { color: var(--text3); }
+  .computed-val { color: var(--accent); font-weight: 500; }
+  .computed-val.warn { color: var(--warn); }
+  .computed-val.danger { color: var(--danger); }
+
+  /* ── RAW JSON PANEL ── */
+  .json-area { padding: 24px; flex: 1; display: flex; gap: 14px; }
+  .json-pane {
+    flex: 1; background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); overflow: hidden; display: flex; flex-direction: column;
+  }
+  .json-pane-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+  }
+  .json-pane-title { font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--text3); }
+  .copy-btn {
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: 5px;
+    color: var(--text3); font-family: 'Syne', sans-serif; font-size: 10px; font-weight: 600;
+    padding: 4px 10px; cursor: pointer; transition: all .15s;
+  }
+  .copy-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .json-code {
+    flex: 1; background: transparent; color: var(--text2);
+    font-family: 'DM Mono', monospace; font-size: 11px; line-height: 1.6;
+    padding: 14px; overflow: auto; white-space: pre; outline: none; border: none;
+    resize: none; min-height: 400px;
+  }
+
+  /* ── HISTORY PANEL ── */
+  .history-area { padding: 24px; flex: 1; }
+  .history-empty { text-align: center; padding: 60px; color: var(--text3); font-family: 'Instrument Serif', serif; font-size: 15px; font-style: italic; }
+  .history-list { display: flex; flex-direction: column; gap: 8px; }
+  .history-item {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); padding: 14px 16px; cursor: pointer;
+    transition: border-color .15s;
+  }
+  .history-item:hover { border-color: var(--accent); }
+  .history-q { font-size: 13px; color: var(--text); margin-bottom: 4px; font-family: 'Instrument Serif', serif; font-style: italic; }
+  .history-meta { font-size: 10px; color: var(--text3); font-family: 'DM Mono', monospace; }
+
+  /* LOADING STATE */
+  .loading-overlay {
+    display: none; align-items: center; justify-content: center;
+    gap: 10px; padding: 40px;
+    flex-direction: column;
+  }
+  .loading-overlay.active { display: flex; }
+  .loading-bar {
+    width: 200px; height: 2px; background: var(--border);
+    border-radius: 1px; overflow: hidden;
+  }
+  .loading-bar-fill {
+    height: 100%; background: var(--accent);
+    width: 0%; animation: loadprogress 3s ease-in-out infinite;
+  }
+  @keyframes loadprogress { 0%{width:0%} 70%{width:85%} 100%{width:95%} }
+  .loading-text { font-size: 11px; color: var(--text3); font-family: 'DM Mono', monospace; animation: blink 1.2s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:.4} 50%{opacity:1} }
+
+  /* EMPTY STATE */
+  .empty-state {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 10px; padding: 60px 24px;
+    color: var(--text3); text-align: center;
+  }
+  .empty-icon { font-size: 32px; opacity: .4; margin-bottom: 4px; }
+  .empty-title { font-family: 'Instrument Serif', serif; font-size: 16px; font-style: italic; color: var(--text2); }
+  .empty-sub { font-size: 12px; }
+
+  /* ALERT */
+  .alert {
+    padding: 12px 16px; border-radius: var(--radius);
+    font-size: 12px; margin: 0 24px 14px;
+    display: none;
+  }
+  .alert.error { background: rgba(232,85,85,.1); border: 1px solid rgba(232,85,85,.3); color: var(--danger); }
+  .alert.success { background: rgba(62,232,181,.1); border: 1px solid rgba(62,232,181,.3); color: var(--accent); }
+  .alert.active { display: block; }
+
+  /* Risk summary bar */
+  .risk-summary {
+    display: flex; gap: 8px; align-items: center;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 10px 14px;
+  }
+  .rs-item { display: flex; align-items: center; gap: 5px; font-size: 11px; }
+  .rs-num { font-weight: 700; font-family: 'DM Mono', monospace; }
+  .rs-lbl { color: var(--text3); }
+  .rs-divider { width: 1px; height: 14px; background: var(--border); }
+
+  /* Mitigations */
+  .mit-list { margin-top: 8px; display: flex; flex-direction: column; gap: 3px; }
+  .mit-item {
+    font-size: 11px; color: var(--text2); font-family: 'DM Mono', monospace;
+    padding: 3px 0 3px 12px; position: relative;
+  }
+  .mit-item::before { content: '→'; position: absolute; left: 0; color: var(--accent); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; }
+    .client-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+<!-- ══ SIDEBAR ══════════════════════════════════════════════ -->
+<aside class="sidebar">
+  <div class="logo">
+    <div class="logo-mark">TaxRAG</div>
+    <div class="logo-sub">Testing Console · V8</div>
+  </div>
+
+  <!-- Webhook URL -->
+  <div class="sidebar-section">
+    <div class="sidebar-label">Konfigurasi</div>
+    <div class="field">
+      <label>Webhook URL (n8n)</label>
+      <input id="webhookUrl" type="text" placeholder="https://your-n8n.com/webhook/query-pajak" value="">
+    </div>
+    <div class="status-row">
+      <div class="dot" id="connDot"></div>
+      <span style="font-size:11px;color:var(--text3)" id="connStatus">Belum dikonfigurasi</span>
+    </div>
+  </div>
+
+  <!-- Mode -->
+  <div class="sidebar-section">
+    <div class="sidebar-label">Mode Analisis</div>
+    <div class="mode-toggle">
+      <button class="mode-btn active" id="modeGeneral" onclick="setMode('general')">General</button>
+      <button class="mode-btn" id="modeAvoidance" onclick="setMode('avoidance_analysis')">Avoidance</button>
+    </div>
+    <div style="margin-top:8px">
+      <div class="field">
+        <label>Jenis Pajak (opsional)</label>
+        <select id="jenisPajak">
+          <option value="">— Auto detect —</option>
+          <option>PPh</option><option>PPN</option><option>KUP</option>
+          <option>Bea_Cukai</option><option>PBB</option><option>PPnBM</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Doc Type (opsional)</label>
+        <select id="docType">
+          <option value="">— Semua —</option>
+          <option>UU</option><option>PP</option><option>PMK</option>
+          <option>PER</option><option>KMK</option><option>SE</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick Tests -->
+  <div class="sidebar-section" style="flex:1">
+    <div class="sidebar-label">Quick Tests</div>
+    <div class="quick-tests">
+      <button class="quick-btn" onclick="loadQuick(0)">
+        <div><span class="qt-tag tag-gen">General</span></div>
+        Apa itu PPh Badan dan berapa tarifnya?
+      </button>
+      <button class="quick-btn" onclick="loadQuick(1)">
+        <div><span class="qt-tag tag-low">Low Risk</span></div>
+        Apakah UMKM omzet Rp 3M bisa gunakan PP 23/2018?
+      </button>
+      <button class="quick-btn" onclick="loadQuick(2)">
+        <div><span class="qt-tag tag-med">Med Risk</span></div>
+        Optimasi bunga pinjaman dari pemegang saham
+      </button>
+      <button class="quick-btn" onclick="loadQuick(3)">
+        <div><span class="qt-tag tag-high">High Risk</span></div>
+        Management fee ke induk perusahaan di Singapura
+      </button>
+      <button class="quick-btn" onclick="loadQuick(4)">
+        <div><span class="qt-tag tag-tp">TP Risk</span></div>
+        Transfer pricing untuk transaksi afiliasi luar negeri
+      </button>
+      <button class="quick-btn" onclick="loadQuick(5)">
+        <div><span class="qt-tag tag-low">Fasilitas</span></div>
+        Fasilitas tax holiday untuk industri pionir
+      </button>
+    </div>
+  </div>
+
+  <!-- Pipeline Version -->
+  <div class="sidebar-section">
+    <div class="sidebar-label">Pipeline Status</div>
+    <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3);line-height:1.8">
+      <div>Ingestion  <span style="color:var(--accent)">V14</span></div>
+      <div>Query      <span style="color:var(--accent)">V8</span></div>
+      <div>Schema     <span style="color:var(--accent)">V14 + avoidance</span></div>
+    </div>
+  </div>
+</aside>
+
+<!-- ══ MAIN ══════════════════════════════════════════════════ -->
+<main class="main">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div class="topbar-title">Tax Avoidance Analysis Engine</div>
+    <span class="topbar-mode general" id="modeIndicator">⬤ General Mode</span>
+    <span style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text3)" id="timerDisplay"></span>
+  </div>
+
+  <!-- Tab nav -->
+  <div class="tab-nav">
+    <div class="tab-item active" onclick="switchTab('query', this)">Query & Hasil</div>
+    <div class="tab-item" onclick="switchTab('client', this)">Profil Klien</div>
+    <div class="tab-item" onclick="switchTab('raw', this)">Raw JSON</div>
+    <div class="tab-item" onclick="switchTab('history', this)">History <span id="histCount" style="font-size:9px;padding:1px 5px;background:var(--bg4);border-radius:10px;margin-left:3px">0</span></div>
+  </div>
+
+  <!-- ── PANEL: QUERY ── -->
+  <div class="panel active" id="panel-query">
+
+    <div class="query-area">
+      <div class="query-box">
+        <textarea id="queryInput" placeholder="Ketik pertanyaan atau analisis pajak..." rows="3"
+          onkeydown="if(e.ctrlKey&&e.key==='Enter')sendQuery()"
+          oninput="updateQueryMeta()"></textarea>
+        <div class="query-footer">
+          <span class="query-meta" id="queryMeta">0 karakter · Ctrl+Enter untuk kirim</span>
+          <button class="send-btn" id="sendBtn" onclick="sendQuery()">
+            <div class="spinner"></div>
+            <span class="btn-label">Analisis →</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="alert" id="alertBox"></div>
+
+    <!-- Loading -->
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="loading-bar"><div class="loading-bar-fill"></div></div>
+      <div class="loading-text" id="loadingText">Menghubungi pipeline...</div>
+    </div>
+
+    <!-- Empty state -->
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">⚖</div>
+      <div class="empty-title">Belum ada query yang dijalankan</div>
+      <div class="empty-sub">Ketik pertanyaan di atas atau pilih quick test di sidebar</div>
+    </div>
+
+    <!-- Results -->
+    <div class="result-area" id="resultArea" style="display:none">
+
+      <!-- Answer -->
+      <div>
+        <div class="result-header">
+          <span class="result-label">Jawaban</span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <span class="conf-badge" id="confBadge">—</span>
+            <span class="result-meta" id="replyTime">—</span>
+          </div>
+        </div>
+        <div class="answer-card">
+          <div class="answer-text" id="answerText">—</div>
+        </div>
+      </div>
+
+      <!-- Celah Tax (avoidance mode only) -->
+      <div id="gapsSection" style="display:none">
+        <div class="result-header">
+          <span class="result-label">Celah Teridentifikasi</span>
+          <div class="risk-summary" id="riskSummary"></div>
+        </div>
+        <div class="gaps-grid" id="gapsGrid"></div>
+      </div>
+
+      <!-- Sources -->
+      <div id="sourcesSection">
+        <div class="result-header">
+          <span class="result-label">Dasar Hukum</span>
+          <span class="result-meta" id="sourceCount">—</span>
+        </div>
+        <div class="sources-list" id="sourcesList"></div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── PANEL: CLIENT ── -->
+  <div class="panel" id="panel-client">
+    <div class="client-grid">
+
+      <!-- Tier 1 -->
+      <div class="form-section">
+        <div class="form-section-title"><span>🏢</span> Identitas Entitas <span style="color:var(--accent);font-size:9px">TIER 1 — WAJIB</span></div>
+
+        <label class="profile-label">Jenis Badan Usaha</label>
+        <select class="profile-input" id="entityType" onchange="computeProfile()">
+          <option value="">— Pilih —</option>
+          <option>PT</option><option>CV</option><option>UD</option>
+          <option>Perorangan</option><option>BUT</option><option>Koperasi</option><option>Yayasan</option><option>BUMN</option>
+        </select>
+
+        <label class="profile-label">Omzet Setahun (Rp)</label>
+        <input class="profile-input" id="omzet" type="number" placeholder="3200000000" oninput="computeProfile()">
+
+        <label class="profile-label">Kode KLU (5 digit)</label>
+        <input class="profile-input" id="kluCode" type="text" placeholder="46100" maxlength="5">
+
+        <label class="profile-label">Status PKP</label>
+        <select class="profile-input" id="isPkp" onchange="computeProfile()">
+          <option value="false">Bukan PKP</option>
+          <option value="true">PKP (Pengusaha Kena Pajak)</option>
+        </select>
+
+        <!-- Computed indicators -->
+        <div class="computed-card" id="computedCard">
+          <div class="computed-row"><span class="computed-key">UMKM eligible</span><span class="computed-val" id="c_umkm">—</span></div>
+          <div class="computed-row"><span class="computed-key">PP 23/2018</span><span class="computed-val" id="c_pp23">—</span></div>
+          <div class="computed-row"><span class="computed-key">Tarif efektif</span><span class="computed-val" id="c_tarif">—</span></div>
+        </div>
+      </div>
+
+      <!-- Tier 2 Keuangan -->
+      <div class="form-section">
+        <div class="form-section-title"><span>📊</span> Keuangan <span style="color:var(--info);font-size:9px">TIER 2</span></div>
+
+        <label class="profile-label">Laba Sebelum Pajak (Rp)</label>
+        <input class="profile-input" id="laba" type="number" placeholder="320000000">
+
+        <label class="profile-label">Total Hutang (Rp)</label>
+        <input class="profile-input" id="totalHutang" type="number" placeholder="0" oninput="computeProfile()">
+
+        <label class="profile-label">Total Ekuitas (Rp)</label>
+        <input class="profile-input" id="totalEkuitas" type="number" placeholder="0" oninput="computeProfile()">
+
+        <label class="profile-label">Nilai Aset Tetap (Rp)</label>
+        <input class="profile-input" id="nilaiAset" type="number" placeholder="0">
+
+        <div class="computed-card">
+          <div class="computed-row"><span class="computed-key">DER Ratio</span><span class="computed-val" id="c_der">—</span></div>
+          <div class="computed-row"><span class="computed-key">Thin Cap Risk</span><span class="computed-val" id="c_thincap">—</span></div>
+        </div>
+      </div>
+
+      <!-- Tier 2 Kepemilikan -->
+      <div class="form-section">
+        <div class="form-section-title"><span>🌐</span> Kepemilikan & Afiliasi</div>
+
+        <label class="profile-label">Ada Pemegang Saham Asing?</label>
+        <select class="profile-input" id="adaPemegangAsing" onchange="computeProfile()">
+          <option value="false">Tidak</option>
+          <option value="true">Ya</option>
+        </select>
+
+        <label class="profile-label">Negara Pemegang Asing</label>
+        <input class="profile-input" id="negaraAsing" placeholder="SG, MY, NL (pisah koma)">
+
+        <label class="profile-label">Ada Perusahaan Afiliasi?</label>
+        <select class="profile-input" id="adaAfiliasi" onchange="computeProfile()">
+          <option value="false">Tidak</option>
+          <option value="true">Ya</option>
+        </select>
+
+        <div class="computed-card">
+          <div class="computed-row"><span class="computed-key">TP Rules berlaku</span><span class="computed-val" id="c_tp">—</span></div>
+          <div class="computed-row"><span class="computed-key">P3B Opportunity</span><span class="computed-val" id="c_p3b">—</span></div>
+        </div>
+      </div>
+
+      <!-- Tier 2 Komponen Biaya -->
+      <div class="form-section">
+        <div class="form-section-title"><span>💰</span> Biaya & Penghasilan Pasif</div>
+
+        <label class="profile-label">Royalti (Rp/tahun)</label>
+        <input class="profile-input" id="royalti" type="number" placeholder="0">
+
+        <label class="profile-label">Bunga Pinjaman (Rp/tahun)</label>
+        <input class="profile-input" id="bungaPinjaman" type="number" placeholder="0">
+
+        <label class="profile-label">Management Fee (Rp/tahun)</label>
+        <input class="profile-input" id="managementFee" type="number" placeholder="0">
+
+        <label class="profile-label">Dividen Diterima (Rp/tahun)</label>
+        <input class="profile-input" id="dividenTerima" type="number" placeholder="0">
+
+        <div style="margin-top:8px">
+          <button class="send-btn" onclick="applyProfile()" style="width:100%;justify-content:center;font-size:11px">
+            Simpan & Gunakan Profil
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── PANEL: RAW JSON ── -->
+  <div class="panel" id="panel-raw">
+    <div class="json-area">
+      <div class="json-pane">
+        <div class="json-pane-header">
+          <span class="json-pane-title">Request Body</span>
+          <button class="copy-btn" onclick="copyJson('reqJson')">Copy</button>
+        </div>
+        <textarea class="json-code" id="reqJson" readonly placeholder="Request akan muncul setelah query dikirim..."></textarea>
+      </div>
+      <div class="json-pane">
+        <div class="json-pane-header">
+          <span class="json-pane-title">Response</span>
+          <button class="copy-btn" onclick="copyJson('resJson')">Copy</button>
+        </div>
+        <textarea class="json-code" id="resJson" readonly placeholder="Response akan muncul setelah query selesai..."></textarea>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PANEL: HISTORY ── -->
+  <div class="panel" id="panel-history">
+    <div class="history-area">
+      <div id="historyList"><div class="history-empty">Belum ada riwayat query dalam sesi ini.</div></div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════════
+let currentMode = 'general';
+let clientProfile = null;
+let queryHistory = [];
+let lastResponse = null;
+let startTime = null;
+
+const QUICK_TESTS = [
+  {
+    query: "Apa itu PPh Badan dan berapa tarifnya?",
+    mode: "general",
+    profile: null
+  },
+  {
+    query: "Apakah PT dengan omzet Rp 3 miliar bisa menggunakan tarif final PP 23/2018?",
+    mode: "avoidance_analysis",
+    profile: { entity_type:"PT", omzet_setahun:3000000000, is_pkp:false }
+  },
+  {
+    query: "Bagaimana mengoptimasi biaya bunga pinjaman dari pemegang saham agar dapat dikurangkan?",
+    mode: "avoidance_analysis",
+    profile: { entity_type:"PT", omzet_setahun:15000000000, is_pkp:true,
+               total_hutang:8000000000, total_ekuitas:2000000000,
+               komponen_biaya:{ bunga_pinjaman: 400000000 } }
+  },
+  {
+    query: "Bagaimana perlakuan pajak management fee yang dibayarkan ke perusahaan induk di Singapura?",
+    mode: "avoidance_analysis",
+    profile: { entity_type:"PT", omzet_setahun:50000000000, is_pkp:true,
+               ada_pemegang_asing:true, negara_pemegang_asing:["SG"],
+               ada_afiliasi:true, komponen_biaya:{ management_fee: 2000000000 } }
+  },
+  {
+    query: "Apa ketentuan transfer pricing untuk transaksi dengan pihak afiliasi luar negeri?",
+    mode: "avoidance_analysis",
+    profile: { entity_type:"PT", omzet_setahun:80000000000, is_pkp:true,
+               ada_pemegang_asing:true, negara_pemegang_asing:["NL","SG"],
+               ada_afiliasi:true }
+  },
+  {
+    query: "Apa saja fasilitas tax holiday yang tersedia untuk industri pionir?",
+    mode: "avoidance_analysis",
+    profile: { entity_type:"PT", omzet_setahun:100000000000, is_pkp:true }
+  }
+];
+
+// ══════════════════════════════════════════════════════════════════
+// UI HELPERS
+// ══════════════════════════════════════════════════════════════════
+function switchTab(name, el) {
+  document.querySelectorAll('.tab-item').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('panel-'+name).classList.add('active');
+}
+
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('modeGeneral').classList.toggle('active', mode === 'general');
+  document.getElementById('modeAvoidance').classList.toggle('active', mode === 'avoidance_analysis');
+  const ind = document.getElementById('modeIndicator');
+  ind.textContent = mode === 'general' ? '⬤ General Mode' : '⬤ Avoidance Mode';
+  ind.className = 'topbar-mode ' + (mode === 'general' ? 'general' : 'avoidance');
+}
+
+function loadQuick(idx) {
+  const t = QUICK_TESTS[idx];
+  document.getElementById('queryInput').value = t.query;
+  setMode(t.mode);
+  if (t.profile) {
+    clientProfile = t.profile;
+    fillProfileForm(t.profile);
+    showAlert('Profil klien quick test sudah dimuat.', 'success');
+  }
+  updateQueryMeta();
+  // Switch to query tab
+  document.querySelectorAll('.tab-item')[0].click();
+}
+
+function fillProfileForm(p) {
+  if (p.entity_type) document.getElementById('entityType').value = p.entity_type;
+  if (p.omzet_setahun) document.getElementById('omzet').value = p.omzet_setahun;
+  if (p.is_pkp !== undefined) document.getElementById('isPkp').value = String(p.is_pkp);
+  if (p.total_hutang) document.getElementById('totalHutang').value = p.total_hutang;
+  if (p.total_ekuitas) document.getElementById('totalEkuitas').value = p.total_ekuitas;
+  if (p.ada_pemegang_asing !== undefined) document.getElementById('adaPemegangAsing').value = String(p.ada_pemegang_asing);
+  if (p.ada_afiliasi !== undefined) document.getElementById('adaAfiliasi').value = String(p.ada_afiliasi);
+  if (p.negara_pemegang_asing) document.getElementById('negaraAsing').value = p.negara_pemegang_asing.join(', ');
+  if (p.komponen_biaya) {
+    if (p.komponen_biaya.bunga_pinjaman) document.getElementById('bungaPinjaman').value = p.komponen_biaya.bunga_pinjaman;
+    if (p.komponen_biaya.management_fee) document.getElementById('managementFee').value = p.komponen_biaya.management_fee;
+    if (p.komponen_biaya.royalti) document.getElementById('royalti').value = p.komponen_biaya.royalti;
+  }
+  computeProfile();
+}
+
+function updateQueryMeta() {
+  const v = document.getElementById('queryInput').value;
+  document.getElementById('queryMeta').textContent = `${v.length} karakter · Ctrl+Enter untuk kirim`;
+}
+
+function showAlert(msg, type='error') {
+  const el = document.getElementById('alertBox');
+  el.textContent = msg;
+  el.className = `alert ${type} active`;
+  setTimeout(() => el.className = `alert ${type}`, 4000);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// PROFILE COMPUTE
+// ══════════════════════════════════════════════════════════════════
+function computeProfile() {
+  const omzet = parseFloat(document.getElementById('omzet').value) || 0;
+  const entity = document.getElementById('entityType').value;
+  const hutang = parseFloat(document.getElementById('totalHutang').value) || 0;
+  const ekuitas = parseFloat(document.getElementById('totalEkuitas').value) || 1;
+  const asing = document.getElementById('adaPemegangAsing').value === 'true';
+  const afiliasi = document.getElementById('adaAfiliasi').value === 'true';
+
+  const isUmkm = omzet > 0 && omzet <= 4_800_000_000;
+  const isPP23 = isUmkm && ['PT','CV','UD','Perorangan'].includes(entity);
+  const der = ekuitas > 0 ? (hutang / ekuitas) : 0;
+  const isThinCap = der > 4.0;
+  const hasTP = asing || afiliasi;
+  const hasP3B = asing && document.getElementById('negaraAsing').value.trim().length > 0;
+
+  const fmt = n => n > 0 ? new Intl.NumberFormat('id-ID').format(n) : '—';
+
+  set('c_umkm', isUmkm ? 'YA' : 'TIDAK', isUmkm ? '' : 'warn');
+  set('c_pp23', isPP23 ? 'YA — tarif 0.5%' : 'TIDAK', isPP23 ? '' : 'warn');
+  set('c_tarif', isPP23 ? '0.5% final (PP 23/2018)' : (omzet > 0 ? '22% PPh Badan normal' : '—'), '');
+  set('c_der', der > 0 ? der.toFixed(2)+':1' : '—', isThinCap ? 'danger' : '');
+  set('c_thincap', isThinCap ? 'YA — DER > 4:1 ⚠' : (der > 0 ? 'AMAN' : '—'), isThinCap ? 'danger' : '');
+  set('c_tp', hasTP ? 'YA — PMK-172/2023 berlaku' : 'TIDAK', hasTP ? 'warn' : '');
+  set('c_p3b', hasP3B ? 'YA — cek treaty' : 'TIDAK', '');
+
+  function set(id, val, cls) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = val;
+    el.className = 'computed-val' + (cls ? ' '+cls : '');
+  }
+}
+
+function applyProfile() {
+  const omzet = parseFloat(document.getElementById('omzet').value) || null;
+  const hutang = parseFloat(document.getElementById('totalHutang').value) || null;
+  const ekuitas = parseFloat(document.getElementById('totalEkuitas').value) || null;
+  const der = (hutang && ekuitas && ekuitas > 0) ? parseFloat((hutang/ekuitas).toFixed(2)) : null;
+
+  const negaraRaw = document.getElementById('negaraAsing').value;
+  const negara = negaraRaw ? negaraRaw.split(',').map(s=>s.trim()).filter(Boolean) : [];
+
+  const komponen = {};
+  const royalti = parseFloat(document.getElementById('royalti').value);
+  const bunga = parseFloat(document.getElementById('bungaPinjaman').value);
+  const mgmt = parseFloat(document.getElementById('managementFee').value);
+  if (royalti) komponen.royalti = royalti;
+  if (bunga) komponen.bunga_pinjaman = bunga;
+  if (mgmt) komponen.management_fee = mgmt;
+
+  const dividen = parseFloat(document.getElementById('dividenTerima').value);
+  const penghasilan_pasif = dividen ? { dividen } : null;
+  const laba = parseFloat(document.getElementById('laba').value) || null;
+  const aset = parseFloat(document.getElementById('nilaiAset').value) || null;
+
+  clientProfile = {
+    entity_type: document.getElementById('entityType').value || undefined,
+    klu_code: document.getElementById('kluCode').value || undefined,
+    omzet_setahun: omzet || undefined,
+    is_pkp: document.getElementById('isPkp').value === 'true',
+    total_hutang: hutang || undefined,
+    total_ekuitas: ekuitas || undefined,
+    der_ratio: der || undefined,
+    laba_sebelum_pajak: laba || undefined,
+    nilai_aset_tetap: aset || undefined,
+    ada_pemegang_asing: document.getElementById('adaPemegangAsing').value === 'true',
+    negara_pemegang_asing: negara.length ? negara : undefined,
+    ada_afiliasi: document.getElementById('adaAfiliasi').value === 'true',
+    komponen_biaya: Object.keys(komponen).length ? komponen : undefined,
+    penghasilan_pasif: penghasilan_pasif || undefined,
+  };
+
+  // Clean undefined
+  Object.keys(clientProfile).forEach(k => clientProfile[k] === undefined && delete clientProfile[k]);
+
+  showAlert('Profil klien berhasil disimpan. Aktif untuk query berikutnya.', 'success');
+}
+
+// ══════════════════════════════════════════════════════════════════
+// WEBHOOK CHECK
+// ══════════════════════════════════════════════════════════════════
+document.getElementById('webhookUrl').addEventListener('input', function() {
+  const url = this.value.trim();
+  const dot = document.getElementById('connDot');
+  const st  = document.getElementById('connStatus');
+  if (url.startsWith('http')) {
+    dot.className = 'dot green';
+    st.textContent = 'URL configured';
+  } else {
+    dot.className = 'dot red';
+    st.textContent = 'URL tidak valid';
+  }
+});
+
+// ══════════════════════════════════════════════════════════════════
+// SEND QUERY
+// ══════════════════════════════════════════════════════════════════
+async function sendQuery() {
+  const url   = document.getElementById('webhookUrl').value.trim();
+  const query = document.getElementById('queryInput').value.trim();
+
+  if (!url) { showAlert('Masukkan Webhook URL terlebih dahulu.'); return; }
+  if (!query) { showAlert('Masukkan pertanyaan terlebih dahulu.'); return; }
+
+  // Build request
+  const body = {
+    query,
+    analysis_mode: currentMode,
+    jenis_pajak: document.getElementById('jenisPajak').value || null,
+    doc_type: document.getElementById('docType').value || null,
+  };
+
+  if (currentMode === 'avoidance_analysis' && clientProfile && Object.keys(clientProfile).length > 0) {
+    body.client_profile = clientProfile;
+  }
+
+  // Show loading
+  setLoading(true);
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('resultArea').style.display = 'none';
+
+  // Update raw JSON pane
+  document.getElementById('reqJson').value = JSON.stringify(body, null, 2);
+  document.getElementById('resJson').value = '// Menunggu response...';
+
+  startTime = performance.now();
+
+  // Load messages cycle
+  const msgs = [
+    'Menghubungi pipeline n8n...',
+    'Query Intelligence sedang memproses...',
+    'Vector search sedang berjalan...',
+    'LLM sedang mensintesis jawaban...',
+    'Menyusun hasil analisis...',
+  ];
+  let mi = 0;
+  const msgInterval = setInterval(() => {
+    document.getElementById('loadingText').textContent = msgs[mi % msgs.length];
+    mi++;
+  }, 1800);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    clearInterval(msgInterval);
+    const elapsed = ((performance.now() - startTime) / 1000).toFixed(2);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`HTTP ${res.status}: ${errText.slice(0, 200)}`);
+    }
+
+    const data = await res.json();
+    lastResponse = data;
+
+    // Update raw JSON
+    document.getElementById('resJson').value = JSON.stringify(data, null, 2);
+    document.getElementById('timerDisplay').textContent = `${elapsed}s`;
+
+    renderResult(data, elapsed);
+
+    // Add to history
+    queryHistory.unshift({ query, mode: currentMode, elapsed, data, ts: new Date().toLocaleTimeString('id-ID') });
+    renderHistory();
+
+  } catch (err) {
+    clearInterval(msgInterval);
+    setLoading(false);
+    document.getElementById('emptyState').style.display = 'flex';
+    showAlert(`Error: ${err.message}`);
+    document.getElementById('resJson').value = `// ERROR\n${err.message}`;
+  }
+
+  setLoading(false);
+}
+
+// ══════════════════════════════════════════════════════════════════
+// RENDER RESULT
+// ══════════════════════════════════════════════════════════════════
+function renderResult(data, elapsed) {
+  document.getElementById('resultArea').style.display = 'flex';
+
+  // Answer
+  const answer = data.answer || data.message || JSON.stringify(data);
+  document.getElementById('answerText').textContent = answer;
+
+  // Confidence badge
+  const conf = (data.confidence || '').toUpperCase();
+  const confEl = document.getElementById('confBadge');
+  confEl.textContent = conf || '—';
+  confEl.className = 'conf-badge ' + (conf === 'HIGH' ? 'conf-high' : conf === 'MEDIUM' ? 'conf-medium' : conf === 'LOW' ? 'conf-low' : '');
+
+  document.getElementById('replyTime').textContent = `${elapsed}s · rerank: ${data.rerank_score ? data.rerank_score.toFixed(2) : '—'}`;
+
+  // Sources
+  const sources = data.sources || [];
+  const srcSection = document.getElementById('sourcesSection');
+  const srcList = document.getElementById('sourcesList');
+  document.getElementById('sourceCount').textContent = `${sources.length} regulasi`;
+  srcList.innerHTML = '';
+  sources.forEach(s => {
+    const dt = (s.doc_type || '').toUpperCase();
+    const chip = document.createElement('div');
+    chip.className = 'source-chip';
+    chip.innerHTML = `
+      <span class="source-type ${dt.toLowerCase()}">${dt}</span>
+      <span>${s.doc_type} No. ${s.doc_number} Tahun ${s.doc_year}${s.pasal_number ? ' — '+s.pasal_number : ''}</span>
+      ${s.doc_title ? `<span style="color:var(--text3);font-size:10px;margin-left:auto;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${s.doc_title}">${s.doc_title}</span>` : ''}
+    `;
+    srcList.appendChild(chip);
+  });
+  srcSection.style.display = sources.length ? 'block' : 'none';
+
+  // Gaps (avoidance mode)
+  const gaps = data.applicable_gaps || [];
+  const gapsSection = document.getElementById('gapsSection');
+  const gapsGrid = document.getElementById('gapsGrid');
+  const riskSummary = document.getElementById('riskSummary');
+
+  if (gaps.length > 0) {
+    gapsSection.style.display = 'block';
+    const rs = data.risk_summary || {};
+    riskSummary.innerHTML = `
+      <div class="rs-item"><span class="rs-num" style="color:var(--accent)">${rs.low_risk||0}</span><span class="rs-lbl">rendah</span></div>
+      <div class="rs-divider"></div>
+      <div class="rs-item"><span class="rs-num" style="color:var(--warn)">${rs.medium_risk||0}</span><span class="rs-lbl">sedang</span></div>
+      <div class="rs-divider"></div>
+      <div class="rs-item"><span class="rs-num" style="color:var(--danger)">${rs.high_risk||0}</span><span class="rs-lbl">tinggi</span></div>
+    `;
+
+    gapsGrid.innerHTML = '';
+    gaps.forEach(g => {
+      const riskClass = g.risk_label === 'RENDAH' ? 'low' : g.risk_label === 'SEDANG' ? 'med' : 'high';
+      const pillClass = g.risk_label === 'RENDAH' ? 'low' : g.risk_label === 'SEDANG' ? 'medium' : 'high';
+      const barColor  = g.risk_label === 'RENDAH' ? 'var(--accent)' : g.risk_label === 'SEDANG' ? 'var(--warn)' : 'var(--danger)';
+      const score     = g.risk_score || 0;
+
+      const mitHtml = (g.mitigations||[]).length
+        ? `<div class="mit-list">${g.mitigations.map(m=>`<div class="mit-item">${m}</div>`).join('')}</div>`
+        : '';
+
+      const card = document.createElement('div');
+      card.className = `gap-card risk-${riskClass}`;
+      card.innerHTML = `
+        <div class="gap-top">
+          <div>
+            <div class="gap-type">${g.gap_type || '—'}</div>
+            <div class="gap-desc">${g.description || ''}</div>
+          </div>
+          <span class="risk-pill ${pillClass}">${g.risk_label || '—'}</span>
+        </div>
+        ${g.dasar_hukum ? `<div class="gap-row"><span class="gap-key">Dasar hukum</span><span class="gap-val">${g.dasar_hukum}</span></div>` : ''}
+        ${g.kalkulasi ? `<div class="gap-row"><span class="gap-key">Kalkulasi</span><span class="gap-val">${g.kalkulasi}</span></div>` : ''}
+        ${g.note ? `<div class="gap-row"><span class="gap-key">Catatan</span><span class="gap-val">${g.note}</span></div>` : ''}
+        <div class="risk-bar-wrap">
+          <div class="risk-bar-bg">
+            <div class="risk-bar-fill" style="width:${score}%;background:${barColor}"></div>
+          </div>
+        </div>
+        ${mitHtml}
+      `;
+      gapsGrid.appendChild(card);
+    });
+  } else {
+    gapsSection.style.display = 'none';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════
+// HISTORY
+// ══════════════════════════════════════════════════════════════════
+function renderHistory() {
+  document.getElementById('histCount').textContent = queryHistory.length;
+  const list = document.getElementById('historyList');
+  if (queryHistory.length === 0) {
+    list.innerHTML = '<div class="history-empty">Belum ada riwayat query dalam sesi ini.</div>';
+    return;
+  }
+  list.innerHTML = '<div class="history-list">' + queryHistory.map((h, i) => `
+    <div class="history-item" onclick="loadHistory(${i})">
+      <div class="history-q">${h.query}</div>
+      <div class="history-meta">${h.ts} · ${h.mode} · ${h.elapsed}s · ${(h.data?.applicable_gaps||[]).length} gaps</div>
+    </div>
+  `).join('') + '</div>';
+}
+
+function loadHistory(idx) {
+  const h = queryHistory[idx];
+  document.getElementById('queryInput').value = h.query;
+  setMode(h.mode);
+  renderResult(h.data, h.elapsed);
+  document.getElementById('reqJson').value = JSON.stringify({ query: h.query, analysis_mode: h.mode }, null, 2);
+  document.getElementById('resJson').value = JSON.stringify(h.data, null, 2);
+  document.getElementById('emptyState').style.display = 'none';
+  document.getElementById('resultArea').style.display = 'flex';
+  document.querySelectorAll('.tab-item')[0].click();
+}
+
+// ══════════════════════════════════════════════════════════════════
+// UTILS
+// ══════════════════════════════════════════════════════════════════
+function setLoading(on) {
+  document.getElementById('loadingOverlay').className = on ? 'loading-overlay active' : 'loading-overlay';
+  const btn = document.getElementById('sendBtn');
+  btn.disabled = on;
+  btn.className = on ? 'send-btn loading' : 'send-btn';
+}
+
+function copyJson(id) {
+  const v = document.getElementById(id).value;
+  navigator.clipboard.writeText(v).then(() => showAlert('Copied!', 'success'));
+}
+
+// Init
+computeProfile();
+</script>
+</body>
+</html>
